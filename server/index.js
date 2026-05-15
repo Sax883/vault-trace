@@ -1,8 +1,9 @@
+require('dotenv').config();
 import express from 'express';
 import cors from 'cors';
 import jwt from 'jsonwebtoken';
 import bcrypt from 'bcryptjs';
-import mongoose from 'mongoose';
+const mongoURI = process.env.MONGODB_URI || "mongodb+srv://admin:%40Vaulttrace081@cluster0.v2.mongodb.net/?retryWrites=true&w=majority";
 import dotenv from 'dotenv';
 
 dotenv.config();
@@ -12,22 +13,32 @@ const PORT = process.env.PORT || 5000;
 const JWT_SECRET = process.env.JWT_SECRET || 'vaulttrace-secret-key-2024';
 const MONGODB_URI = process.env.MONGODB_URI || 'mongodb://127.0.0.1:27017/vaulttrace';
 
-mongoose.set('strictQuery', false);
-mongoose
-  .connect(MONGODB_URI)
-  .then(() => console.log(`Connected to MongoDB at ${MONGODB_URI}`))
-  .catch((error) => {
-    console.error('MongoDB connection error:', error);
-    process.exit(1);
-  });
+if (!MONGODB_URI) {
+  console.error('❌ Error: MONGODB_URI is not defined in .env or environment.');
+} else {
+  mongoose.set('strictQuery', false);
+  mongoose
+    .connect(MONGODB_URI)
+    .then(() => console.log(`✅ Connected to MongoDB at ${MONGODB_URI}`))
+    .catch((error) => {
+      console.error('❌ MongoDB connection error:', error);
+      if (error.message.includes('Authentication failed')) {
+        console.log('Tip: Check if your password in .env is URL encoded (%40 instead of @).');
+      }
+      process.exit(1);
+    });
+}
 
 const clientSchema = new mongoose.Schema(
   {
     name: { type: String, required: true },
+    fullName: String,
     email: { type: String, required: true, unique: true },
     password: { type: String, required: true },
     description: String,
     evidence: String,
+    caseId: String,
+    amount: { type: Number, default: 0 },
     amountLost: { type: Number, default: 0 },
     data: {
       recoveredAmount: { type: Number, default: 0 },
@@ -108,26 +119,30 @@ const authenticateToken = (req, res, next) => {
 // Client registration
 app.post('/api/register', async (req, res) => {
   try {
-    const { name, email, password, description, evidence, amountLost } = req.body;
-
+    const { fullName, name, email, password, description, evidence, amountLost, caseId, amount } = req.body;
     const existingClient = await Client.findOne({ email });
+
     if (existingClient) {
       return res.status(400).json({ message: 'Email already registered' });
     }
 
     const hashedPassword = await bcrypt.hash(password, 10);
-    await Client.create({
-      name,
+    const newClient = new Client({
+      name: fullName || name,
+      fullName: fullName || name,
       email,
       password: hashedPassword,
       description,
       evidence,
-      amountLost: amountLost || 0,
+      caseId,
+      amount: amount || amountLost || 0,
+      amountLost: amountLost || amount || 0,
       data: {
-        verifiedLoss1: amountLost || 0,
+        verifiedLoss1: amountLost || amount || 0,
       },
     });
 
+    await newClient.save();
     res.status(201).json({ message: 'Registration successful' });
   } catch (error) {
     console.error('Registration error:', error);
