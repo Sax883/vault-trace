@@ -1,5 +1,4 @@
 import { NextRequest, NextResponse } from 'next/server';
-import bcrypt from 'bcryptjs';
 import jwt from 'jsonwebtoken';
 
 export async function POST(request: NextRequest) {
@@ -9,12 +8,7 @@ export async function POST(request: NextRequest) {
     const adminEmail = process.env.ADMIN_EMAIL!;
     const adminPassword = process.env.ADMIN_PASSWORD!;
 
-    if (email !== adminEmail) {
-      return NextResponse.json({ message: 'Invalid credentials' }, { status: 401 });
-    }
-
-    const isPasswordValid = await bcrypt.compare(password, adminPassword);
-    if (!isPasswordValid) {
+    if (email !== adminEmail || password !== adminPassword) {
       return NextResponse.json({ message: 'Invalid credentials' }, { status: 401 });
     }
 
