@@ -28,6 +28,6 @@ export async function POST(request: NextRequest) {
     return NextResponse.json({ message: 'Registration successful' }, { status: 201 });
   } catch (error) {
     console.error('Registration error:', error);
-    return NextResponse.json({ message: 'Registration failed' }, { status: 500 });
+    return NextResponse.json({ message: 'Registration failed. Please check database connection.' }, { status: 500 });
   }
 }
