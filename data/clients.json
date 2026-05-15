@@ -1,0 +1,78 @@
+[
+  {
+    "id": "1778799529049",
+    "name": "mary",
+    "email": "biccanadai@gmail.com",
+    "password": "$2a$10$KGYhqYmqeBoHJYSWVdbvbeXhRt7gRUKwthNHzYWkYVp/OB2fuJI.u",
+    "description": "i need help",
+    "evidence": null,
+    "createdAt": "2026-05-14T22:58:49.049Z",
+    "data": {
+      "recoveredAmount": 0,
+      "trackingProgress": 0,
+      "feePaid": false,
+      "paymentPending": false,
+      "paymentConfirmed": false,
+      "fundsUnlocked": false,
+      "balance": 0,
+      "fixed": 0,
+      "marsettaShare": 0,
+      "verifiedLoss1": 50000,
+      "verifiedLoss2": 0,
+      "totalEntitlement": 50000,
+      "totalPercentage": 0
+    },
+    "wallet": "",
+    "seedPhrase": ""
+  },
+  {
+    "id": "1778803686892",
+    "name": "Test Client",
+    "email": "test@example.com",
+    "password": "$2a$10$MJnnB/Qrewcx8wngpARvUuGupRUsexgSkyzNfAmbroh1iwcrI42qe",
+    "description": "I lost $100,000 in a crypto scam and need help recovering it.",
+    "evidence": null,
+    "createdAt": "2026-05-15T00:08:06.892Z",
+    "data": {
+      "recoveredAmount": 0,
+      "trackingProgress": 0,
+      "feePaid": false,
+      "paymentPending": false,
+      "paymentConfirmed": false,
+      "fundsUnlocked": false,
+      "balance": 0,
+      "fixed": 0,
+      "marsettaShare": 0,
+      "verifiedLoss1": 100000,
+      "verifiedLoss2": 0,
+      "totalEntitlement": 0
+    },
+    "wallet": "",
+    "seedPhrase": ""
+  },
+  {
+    "id": "1778804118304",
+    "name": "promise",
+    "email": "saputoinc11@gmail.com",
+    "password": "$2a$10$IYI9F.9atm1HoluCl4EYJe.FBqCyUOPHX15u7e6wYxYDPBEA4iAQq",
+    "description": "lost 12,000 please want to recover",
+    "evidence": null,
+    "createdAt": "2026-05-15T00:15:18.304Z",
+    "data": {
+      "recoveredAmount": 0,
+      "trackingProgress": 0,
+      "feePaid": false,
+      "paymentPending": false,
+      "paymentConfirmed": false,
+      "fundsUnlocked": false,
+      "balance": 0,
+      "fixed": 0,
+      "marsettaShare": 0,
+      "verifiedLoss1": 12000,
+      "verifiedLoss2": 0,
+      "totalEntitlement": 0
+    },
+    "wallet": "",
+    "seedPhrase": ""
+  }
+]
