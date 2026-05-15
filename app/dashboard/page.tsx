@@ -3,6 +3,7 @@
 import { ChangeEvent, useState, useEffect } from 'react';
 import { LineChart, Line, XAxis, YAxis, CartesianGrid, Tooltip, ResponsiveContainer } from 'recharts';
 import { useRouter } from 'next/navigation';
+import { getApiUrl } from '@/lib/api-config';
 
 interface User {
   id: string;
@@ -181,7 +182,7 @@ export default function ClientDashboard() {
 
   const fetchClientData = async (authToken: string) => {
     try {
-      const response = await fetch('http://localhost:5000/api/client/data', {
+      const response = await fetch(getApiUrl('/api/client/data'), {
         headers: {
           'Authorization': `Bearer ${authToken}`,
         },
@@ -207,7 +208,7 @@ export default function ClientDashboard() {
 
   const fetchMessages = async (authToken: string) => {
     try {
-      const response = await fetch('http://localhost:5000/api/messages', {
+      const response = await fetch(getApiUrl('/api/messages'), {
         headers: {
           'Authorization': `Bearer ${authToken}`,
         },
@@ -244,7 +245,7 @@ export default function ClientDashboard() {
     }
 
     try {
-      const response = await fetch('http://localhost:5000/api/client/wallet', {
+      const response = await fetch(getApiUrl('/api/client/wallet'), {
         method: 'PUT',
         headers: {
           'Content-Type': 'application/json',
@@ -268,7 +269,7 @@ export default function ClientDashboard() {
     if (!supportMessage.trim() || !token) return;
 
     try {
-      const response = await fetch('http://localhost:5000/api/messages', {
+      const response = await fetch(getApiUrl('/api/messages'), {
         method: 'POST',
         headers: {
           'Content-Type': 'application/json',
@@ -307,7 +308,7 @@ export default function ClientDashboard() {
     }
 
     try {
-      const response = await fetch('http://localhost:5000/api/client/verified-loss-2', {
+      const response = await fetch(getApiUrl('/api/client/verified-loss-2'), {
         method: 'PUT',
         headers: {
           'Content-Type': 'application/json',
@@ -338,7 +339,7 @@ export default function ClientDashboard() {
     if (!replyText.trim() || !token) return;
 
     try {
-      const response = await fetch(`http://localhost:5000/api/messages/${messageId}/reply`, {
+      const response = await fetch(getApiUrl(`/api/messages/${messageId}/reply`), {
         method: 'PUT',
         headers: {
           'Content-Type': 'application/json',
@@ -382,7 +383,7 @@ export default function ClientDashboard() {
     }
 
     try {
-      const response = await fetch('http://localhost:5000/api/client/password', {
+      const response = await fetch(getApiUrl('/api/client/password'), {
         method: 'PUT',
         headers: {
           'Content-Type': 'application/json',

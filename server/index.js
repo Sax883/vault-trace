@@ -1,9 +1,8 @@
-require('dotenv').config();
 import express from 'express';
 import cors from 'cors';
 import jwt from 'jsonwebtoken';
 import bcrypt from 'bcryptjs';
-const mongoURI = process.env.MONGODB_URI || "mongodb+srv://admin:%40Vaulttrace081@cluster0.v2.mongodb.net/?retryWrites=true&w=majority";
+import mongoose from 'mongoose';
 import dotenv from 'dotenv';
 
 dotenv.config();
@@ -21,11 +20,12 @@ if (!MONGODB_URI) {
     .connect(MONGODB_URI)
     .then(() => console.log(`✅ Connected to MongoDB at ${MONGODB_URI}`))
     .catch((error) => {
-      console.error('❌ MongoDB connection error:', error);
+      console.error('❌ MongoDB connection error:', error.message);
       if (error.message.includes('Authentication failed')) {
         console.log('Tip: Check if your password in .env is URL encoded (%40 instead of @).');
       }
-      process.exit(1);
+      // Don't exit immediately; the server can still accept requests and retry connections
+      console.log('⚠️  Continuing without database. Some operations may fail.');
     });
 }
 

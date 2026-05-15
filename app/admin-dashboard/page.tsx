@@ -2,6 +2,7 @@
 
 import { useEffect, useState } from 'react';
 import { useRouter } from 'next/navigation';
+import { getApiUrl } from '@/lib/api-config';
 
 interface User {
   email: string;
@@ -145,7 +146,7 @@ export default function AdminDashboard() {
 
   const fetchClients = async (authToken: string) => {
     try {
-      const response = await fetch('http://localhost:5000/api/admin/clients', {
+      const response = await fetch(getApiUrl('/api/admin/clients'), {
         headers: {
           'Authorization': `Bearer ${authToken}`,
         },
@@ -168,7 +169,7 @@ export default function AdminDashboard() {
 
   const fetchClientData = async (clientId: string, authToken: string) => {
     try {
-      const response = await fetch(`http://localhost:5000/api/admin/client/${clientId}`, {
+      const response = await fetch(getApiUrl(`/api/admin/client/${clientId}`), {
         headers: {
           'Authorization': `Bearer ${authToken}`,
         },
@@ -192,8 +193,8 @@ export default function AdminDashboard() {
   const fetchMessages = async (authToken: string, clientEmail?: string) => {
     try {
       const url = clientEmail 
-        ? `http://localhost:5000/api/messages?clientEmail=${clientEmail}`
-        : 'http://localhost:5000/api/messages';
+        ? getApiUrl(`/api/messages?clientEmail=${clientEmail}`)
+        : getApiUrl('/api/messages');
       
       const response = await fetch(url, {
         headers: {
@@ -229,7 +230,7 @@ export default function AdminDashboard() {
     }
 
     try {
-      const response = await fetch(`http://localhost:5000/api/admin/client/${selectedClient}`, {
+      const response = await fetch(getApiUrl(`/api/admin/client/${selectedClient}`), {
         method: 'PUT',
         headers: {
           'Content-Type': 'application/json',
@@ -260,7 +261,7 @@ export default function AdminDashboard() {
     }
 
     try {
-      const response = await fetch(`http://localhost:5000/api/admin/client/${selectedClient}`, {
+      const response = await fetch(getApiUrl(`/api/admin/client/${selectedClient}`), {
         method: 'DELETE',
         headers: {
           'Authorization': `Bearer ${token}`,
@@ -301,7 +302,7 @@ export default function AdminDashboard() {
     if (!replyText.trim() || !token) return;
 
     try {
-      const response = await fetch(`http://localhost:5000/api/messages/${id}/reply`, {
+      const response = await fetch(getApiUrl(`/api/messages/${id}/reply`), {
         method: 'PUT',
         headers: {
           'Content-Type': 'application/json',

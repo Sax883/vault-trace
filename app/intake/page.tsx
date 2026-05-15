@@ -2,6 +2,7 @@
 
 import { useState } from 'react';
 import { useRouter } from 'next/navigation';
+import { getApiUrl } from '@/lib/api-config';
 
 export default function Intake() {
   const router = useRouter();
@@ -18,7 +19,7 @@ export default function Intake() {
     e.preventDefault();
 
     try {
-      const response = await fetch('http://localhost:5000/api/register', {
+      const response = await fetch(getApiUrl('/api/register'), {
         method: 'POST',
         headers: {
           'Content-Type': 'application/json',
