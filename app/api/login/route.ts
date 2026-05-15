@@ -19,7 +19,13 @@ export async function POST(request: NextRequest) {
       return NextResponse.json({ message: 'Invalid credentials' }, { status: 401 });
     }
 
-    const token = jwt.sign({ id: client._id, email: client.email }, process.env.JWT_SECRET!, { expiresIn: '1h' });
+    const jwtSecret = process.env.JWT_SECRET;
+    if (!jwtSecret) {
+      console.error('Login error: missing JWT_SECRET');
+      return NextResponse.json({ message: 'Server misconfiguration' }, { status: 500 });
+    }
+
+    const token = jwt.sign({ id: client._id, email: client.email }, jwtSecret, { expiresIn: '1h' });
 
     return NextResponse.json({ token, message: 'Login successful' }, { status: 200 });
   } catch (error) {

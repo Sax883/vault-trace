@@ -5,14 +5,20 @@ export async function POST(request: NextRequest) {
   try {
     const { email, password } = await request.json();
 
-    const adminEmail = process.env.ADMIN_EMAIL!;
-    const adminPassword = process.env.ADMIN_PASSWORD!;
+    const adminEmail = process.env.ADMIN_EMAIL;
+    const adminPassword = process.env.ADMIN_PASSWORD;
+    const jwtSecret = process.env.JWT_SECRET;
+
+    if (!adminEmail || !adminPassword || !jwtSecret) {
+      console.error('Admin login error: missing environment variables');
+      return NextResponse.json({ message: 'Server misconfiguration' }, { status: 500 });
+    }
 
     if (email !== adminEmail || password !== adminPassword) {
       return NextResponse.json({ message: 'Invalid credentials' }, { status: 401 });
     }
 
-    const token = jwt.sign({ email: adminEmail, role: 'admin' }, process.env.JWT_SECRET!, { expiresIn: '1h' });
+    const token = jwt.sign({ email: adminEmail, role: 'admin' }, jwtSecret, { expiresIn: '1h' });
 
     return NextResponse.json({ token, message: 'Admin login successful' }, { status: 200 });
   } catch (error) {
