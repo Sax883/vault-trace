@@ -461,3 +461,5 @@ app.delete('/api/admin/client/:id', authenticateToken, async (req, res) => {
 app.listen(PORT, () => {
   console.log(`Server running on port ${PORT}`);
 });
+// At the end of your index.js / server.js file
+module.exports = app;
