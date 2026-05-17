@@ -3,6 +3,13 @@ import Message from '@/lib/models/Message';
 import connectDB from '@/lib/mongodb';
 import { verifyToken } from '@/lib/auth';
 
+const formatMessage = (msg: any) => ({
+  ...msg.toJSON(),
+  from: msg.from || msg.sender || '',
+  message: msg.message || msg.content || '',
+  time: msg.time || msg.timestamp?.toISOString?.() || msg.createdAt?.toISOString?.() || '',
+});
+
 export async function GET(request: NextRequest) {
   try {
     const decoded = verifyToken(request);
@@ -19,7 +26,7 @@ export async function GET(request: NextRequest) {
     await connectDB();
     const messages = await Message.find({ clientId }).sort({ timestamp: 1 });
 
-    return NextResponse.json(messages, { status: 200 });
+    return NextResponse.json(messages.map(formatMessage), { status: 200 });
   } catch (error) {
     console.error('Fetch messages error:', error);
     return NextResponse.json({ message: 'Failed to fetch messages' }, { status: 500 });

@@ -1,5 +1,6 @@
 import { NextRequest, NextResponse } from 'next/server';
 import Message from '@/lib/models/Message';
+import Client from '@/lib/models/Client';
 import connectDB from '@/lib/mongodb';
 import { verifyToken } from '@/lib/auth';
 
@@ -17,8 +18,23 @@ export async function GET(request: NextRequest) {
       return NextResponse.json({ message: 'Unauthorized' }, { status: 401 });
     }
 
+    const url = new URL(request.url);
+    const clientEmail = url.searchParams.get('clientEmail');
+
     await connectDB();
-    const messages = await Message.find({ clientId: decoded.id }).sort({ timestamp: 1 });
+
+    let messages;
+    if (clientEmail) {
+      // Admin fetching messages for a specific client by email
+      const client = await Client.findOne({ email: clientEmail });
+      if (!client) {
+        return NextResponse.json({ message: 'Client not found' }, { status: 404 });
+      }
+      messages = await Message.find({ clientId: client._id }).sort({ timestamp: 1 });
+    } else {
+      // Client fetching their own messages
+      messages = await Message.find({ clientId: decoded.id }).sort({ timestamp: 1 });
+    }
 
     return NextResponse.json(messages.map(formatMessage), { status: 200 });
   } catch (error) {
@@ -35,15 +51,15 @@ export async function POST(request: NextRequest) {
     }
 
     await connectDB();
-    const { content } = await request.json();
+    const { message } = await request.json();
 
-    const message = await Message.create({
+    const newMessage = await Message.create({
       clientId: decoded.id,
-      sender: 'client',
-      content,
+      sender: decoded.role === 'admin' ? 'admin' : 'client',
+      content: message,
     });
 
-    return NextResponse.json(message, { status: 201 });
+    return NextResponse.json(newMessage, { status: 201 });
   } catch (error) {
     console.error('Send message error:', error);
     return NextResponse.json({ message: 'Failed to send message' }, { status: 500 });

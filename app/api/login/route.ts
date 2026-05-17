@@ -25,9 +25,20 @@ export async function POST(request: NextRequest) {
       return NextResponse.json({ message: 'Server misconfiguration' }, { status: 500 });
     }
 
-    const token = jwt.sign({ id: client._id, email: client.email }, jwtSecret, { expiresIn: '1h' });
+    const token = jwt.sign(
+      { id: client._id, email: client.email, role: 'client' },
+      jwtSecret,
+      { expiresIn: '1h' }
+    );
 
-    return NextResponse.json({ token, message: 'Login successful' }, { status: 200 });
+    const user = {
+      id: client._id,
+      email: client.email,
+      name: client.name,
+      role: 'client',
+    };
+
+    return NextResponse.json({ token, user, message: 'Login successful' }, { status: 200 });
   } catch (error) {
     console.error('Login error:', error);
     return NextResponse.json({ message: 'Login failed. Please check database connection.' }, { status: 500 });

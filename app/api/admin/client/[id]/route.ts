@@ -3,21 +3,19 @@ import Client from '@/lib/models/Client';
 import connectDB from '@/lib/mongodb';
 import { verifyToken } from '@/lib/auth';
 
-export async function GET(request: NextRequest) {
+export async function GET(
+  request: NextRequest,
+  { params }: { params: Promise<{ id: string }> }
+) {
   try {
     const decoded = verifyToken(request);
     if (!decoded || decoded.role !== 'admin') {
       return NextResponse.json({ message: 'Unauthorized' }, { status: 401 });
     }
 
-    const url = new URL(request.url);
-    const clientId = url.searchParams.get('id');
-    if (!clientId) {
-      return NextResponse.json({ message: 'Client ID required' }, { status: 400 });
-    }
-
+    const { id } = await params;
     await connectDB();
-    const client = await Client.findById(clientId).select('-password');
+    const client = await Client.findById(id).select('-password');
     if (!client) {
       return NextResponse.json({ message: 'Client not found' }, { status: 404 });
     }
@@ -29,23 +27,21 @@ export async function GET(request: NextRequest) {
   }
 }
 
-export async function PUT(request: NextRequest) {
+export async function PUT(
+  request: NextRequest,
+  { params }: { params: Promise<{ id: string }> }
+) {
   try {
     const decoded = verifyToken(request);
     if (!decoded || decoded.role !== 'admin') {
       return NextResponse.json({ message: 'Unauthorized' }, { status: 401 });
     }
 
-    const url = new URL(request.url);
-    const clientId = url.searchParams.get('id');
-    if (!clientId) {
-      return NextResponse.json({ message: 'Client ID required' }, { status: 400 });
-    }
-
+    const { id } = await params;
     await connectDB();
     const updates = await request.json();
 
-    const client = await Client.findByIdAndUpdate(clientId, updates, { returnDocument: 'after' }).select('-password');
+    const client = await Client.findByIdAndUpdate(id, updates, { returnDocument: 'after' }).select('-password');
     if (!client) {
       return NextResponse.json({ message: 'Client not found' }, { status: 404 });
     }
@@ -57,21 +53,19 @@ export async function PUT(request: NextRequest) {
   }
 }
 
-export async function DELETE(request: NextRequest) {
+export async function DELETE(
+  request: NextRequest,
+  { params }: { params: Promise<{ id: string }> }
+) {
   try {
     const decoded = verifyToken(request);
     if (!decoded || decoded.role !== 'admin') {
       return NextResponse.json({ message: 'Unauthorized' }, { status: 401 });
     }
 
-    const url = new URL(request.url);
-    const clientId = url.searchParams.get('id');
-    if (!clientId) {
-      return NextResponse.json({ message: 'Client ID required' }, { status: 400 });
-    }
-
+    const { id } = await params;
     await connectDB();
-    await Client.findByIdAndDelete(clientId);
+    await Client.findByIdAndDelete(id);
 
     return NextResponse.json({ message: 'Client deleted' }, { status: 200 });
   } catch (error) {

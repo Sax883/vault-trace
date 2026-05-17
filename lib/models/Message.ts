@@ -6,6 +6,12 @@ const MessageSchema = new mongoose.Schema({
   content: { type: String, required: true },
   timestamp: { type: Date, default: Date.now },
   isRead: { type: Boolean, default: false },
+  message: { type: String },
+  from: { type: String },
+  time: { type: String },
+  clientEmail: { type: String },
+  adminReply: { type: String },
+  adminReplyTime: { type: Date },
 }, { timestamps: true });
 
 MessageSchema.virtual('id').get(function() {
