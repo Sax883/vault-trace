@@ -45,6 +45,14 @@ export async function PUT(request: NextRequest) {
     await connectDB();
     const updates = await request.json();
 
+    // If data payload includes verified losses, normalize totalEntitlement
+    if (updates.data) {
+      const existing = await Client.findById(clientId);
+      const merged = { ...(existing?.data || {}), ...updates.data };
+      merged.totalEntitlement = (merged.verifiedLoss1 || 0) + (merged.verifiedLoss2 || 0);
+      updates.data = merged;
+    }
+
     const client = await Client.findByIdAndUpdate(clientId, updates, { returnDocument: 'after' }).select('-password');
     if (!client) {
       return NextResponse.json({ message: 'Client not found' }, { status: 404 });

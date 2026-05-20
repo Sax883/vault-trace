@@ -81,8 +81,8 @@ export default function AdminDashboard() {
   const [isCalculating, setIsCalculating] = useState(false);
 
   useEffect(() => {
-    const storedToken = localStorage.getItem('token');
-    const storedUser = localStorage.getItem('user');
+    const storedToken = sessionStorage.getItem('token');
+    const storedUser = sessionStorage.getItem('user');
 
     if (!storedToken || !storedUser) {
       router.push('/admin-login');
@@ -132,11 +132,12 @@ export default function AdminDashboard() {
       const finalAmount = data.totalEntitlement;
       const increment = finalAmount / 100;
 
+      const feePercent = (data as any).feePercent ?? 0.25;
       const timer = setInterval(() => {
         setDisplayAmount((prev) => {
           if (prev < finalAmount) {
             const newAmount = prev + increment;
-            setCurrentFee(newAmount * 0.25); // 25% service fee
+            setCurrentFee(newAmount * feePercent);
             return newAmount;
           } else {
             clearInterval(timer);
@@ -166,12 +167,15 @@ export default function AdminDashboard() {
         const clientsData = await response.json();
         setClients(clientsData);
       } else {
-        localStorage.removeItem('token');
-        localStorage.removeItem('user');
+        sessionStorage.removeItem('token');
+        sessionStorage.removeItem('user');
         router.push('/admin-login');
       }
     } catch (error) {
       console.error('Error fetching clients:', error);
+      sessionStorage.removeItem('token');
+      sessionStorage.removeItem('user');
+      router.push('/admin-login');
     } finally {
       setLoading(false);
     }
@@ -329,8 +333,8 @@ export default function AdminDashboard() {
   };
 
   const handleLogout = () => {
-    localStorage.removeItem('token');
-    localStorage.removeItem('user');
+    sessionStorage.removeItem('token');
+    sessionStorage.removeItem('user');
     router.push('/');
   };
 
@@ -343,6 +347,14 @@ export default function AdminDashboard() {
     { action: 'Client logged in', time: '10:30 UTC' },
     { action: 'Payment pending approval', time: '09:45 UTC' },
     { action: 'Recovery bridge established', time: '08:20 UTC' },
+  ];
+
+  const statusSteps = [
+    'Submitted',
+    'Under Technical Assessment',
+    'Tracing Active',
+    'Legal/Exchange Outreach',
+    'Resolution',
   ];
 
   return (
@@ -636,6 +648,35 @@ export default function AdminDashboard() {
             <div className="glass rounded-[32px] border border-white/10 bg-white/5 p-8 shadow-xl shadow-cyan-500/5">
               <p className="text-xs uppercase tracking-[0.3em] text-cyan-300 mb-4">Current Client Status</p>
               <div className="space-y-4 text-sm">
+                <div>
+                  <label className="text-xs uppercase tracking-[0.2em] text-slate-400">Case Status</label>
+                  <select
+                    value={(data as any).statusIndex ?? 1}
+                    onChange={(e) => updateData('statusIndex', parseInt(e.target.value))}
+                    className="mt-2 w-full rounded-2xl border border-white/10 bg-slate-900/70 px-3 py-2 text-sm text-slate-200"
+                  >
+                    {statusSteps.map((s, i) => (
+                      <option key={s} value={i}>{s}</option>
+                    ))}
+                  </select>
+                  <div className="mt-2 space-y-2">
+                    <div className="flex gap-2 items-center">
+                      <label className="text-xs text-slate-300">Service Fee %</label>
+                      <input
+                        type="number"
+                        min={0}
+                        max={100}
+                        step={0.1}
+                        value={((data as any).feePercent ?? 0.25) * 100}
+                        onChange={(e) => updateData('feePercent', (parseFloat(e.target.value) || 0) / 100)}
+                        className="w-28 rounded-2xl border border-white/10 bg-slate-900/70 px-3 py-2 text-sm text-slate-200"
+                      />
+                    </div>
+                    <div>
+                      <button onClick={saveClientData} className="px-3 py-2 bg-cyan-500 text-black rounded">Save Status</button>
+                    </div>
+                  </div>
+                </div>
                 <p><strong>Recovered Amount:</strong> ${data?.recoveredAmount?.toLocaleString?.() ?? '0'}</p>
                 <p><strong>Fee Paid:</strong> {data?.feePaid ? 'Yes' : 'No'}</p>
                 <p><strong>Tracking Progress:</strong> {data?.trackingProgress ?? 0}%</p>

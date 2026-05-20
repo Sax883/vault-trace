@@ -5,7 +5,34 @@ import bcrypt from 'bcryptjs';
 import mongoose from 'mongoose';
 import dotenv from 'dotenv';
 
-dotenv.config();
+// Only load the local .env file if we are NOT on Vercel
+if (process.env.NODE_ENV !== 'production') {
+    dotenv.config();
+}
+
+// Deployment safety checks: allow a developer override with DEV_ALLOW_LOCAL=true
+const isDevLocal = process.env.DEV_ALLOW_LOCAL === 'true';
+const requiredEnvMissing = [];
+if (!process.env.JWT_SECRET) requiredEnvMissing.push('JWT_SECRET');
+if (!process.env.MONGODB_URI && !isDevLocal) requiredEnvMissing.push('MONGODB_URI');
+// Disallow local MongoDB URIs in deployments unless explicitly allowed
+if (process.env.MONGODB_URI && /(127\.0\.0\.1|localhost)/.test(process.env.MONGODB_URI) && !isDevLocal) {
+  requiredEnvMissing.push('MONGODB_URI (local addresses not allowed; set DEV_ALLOW_LOCAL=true to override)');
+}
+if (!isDevLocal && (!process.env.SMTP_HOST || !process.env.SMTP_USER || !process.env.SMTP_PASS || !process.env.EMAIL_FROM)) {
+  requiredEnvMissing.push('SMTP_HOST/SMTP_USER/SMTP_PASS/EMAIL_FROM');
+}
+
+if (requiredEnvMissing.length > 0) {
+  console.error('Missing or insecure environment configuration:');
+  requiredEnvMissing.forEach((e) => console.error(` - ${e}`));
+  if (!isDevLocal) {
+    console.error('Aborting process to avoid local-only data persistence.');
+    process.exit(1);
+  } else {
+    console.warn('DEV_ALLOW_LOCAL=true detected — continuing in local dev mode (some services are mocked/fallbacks enabled)');
+  }
+}
 
 const app = express();
 const PORT = process.env.PORT || 5000;
@@ -109,6 +136,15 @@ const authenticateToken = (req, res, next) => {
     if (err) {
       return res.status(403).json({ message: 'Invalid token' });
     }
+    // Normalize local-dev tokens so they don't cause ObjectId cast errors
+    if (process.env.DEV_ALLOW_LOCAL === 'true' && typeof user?.id === 'string' && user.id.startsWith('local-')) {
+      try {
+        user._devLocal = true;
+        user.id = new mongoose.Types.ObjectId().toHexString();
+      } catch (e) {
+        // fallback: leave id as-is
+      }
+    }
     req.user = user;
     next();
   });
@@ -119,14 +155,37 @@ const authenticateToken = (req, res, next) => {
 // Client registration
 app.post('/api/register', async (req, res) => {
   try {
-    const { fullName, name, email, password, description, evidence, amountLost, caseId, amount } = req.body;
-    const existingClient = await Client.findOne({ email });
+    const { fullName, name, email, password, description, evidence, evidenceHash, amountLost, caseId, amount } = req.body;
 
+    // Ensure DB connection is available before proceeding; allow dev fallback when DEV_ALLOW_LOCAL=true
+    const dbConnected = mongoose.connection && mongoose.connection.readyState === 1;
+    if (!dbConnected && !isDevLocal) {
+      console.error('Database not connected — refusing to register to avoid local persistence');
+      return res.status(503).json({ message: 'Service unavailable: database not connected' });
+    }
+
+    if (!dbConnected && isDevLocal) {
+      console.warn('MongoDB not connected — using development fallback response');
+      const generatedCaseId = `CASE-${Date.now().toString(36).toUpperCase().slice(-8)}`;
+      const tempId = mongoose.Types.ObjectId().toHexString();
+      const token = jwt.sign({ id: tempId, email, role: 'client' }, JWT_SECRET || 'dev-jwt-secret', { expiresIn: '24h' });
+
+      return res.status(201).json({
+        message: 'Registration successful (dev fallback)',
+        caseId: generatedCaseId,
+        token,
+        user: { id: tempId, name: fullName || name, email, role: 'client', _devLocal: true },
+      });
+    }
+
+    const existingClient = await Client.findOne({ email });
     if (existingClient) {
       return res.status(400).json({ message: 'Email already registered' });
     }
 
     const hashedPassword = await bcrypt.hash(password, 10);
+    const generatedCaseId = `CASE-${Date.now().toString(36).toUpperCase().slice(-8)}`;
+
     const newClient = new Client({
       name: fullName || name,
       fullName: fullName || name,
@@ -134,19 +193,111 @@ app.post('/api/register', async (req, res) => {
       password: hashedPassword,
       description,
       evidence,
-      caseId,
+      evidenceHash,
+      caseId: generatedCaseId,
       amount: amount || amountLost || 0,
       amountLost: amountLost || amount || 0,
       data: {
         verifiedLoss1: amountLost || amount || 0,
+        trackingProgress: 5,
       },
     });
 
     await newClient.save();
-    res.status(201).json({ message: 'Registration successful' });
+
+    // Create an initial system message
+    const initialMessage = `Welcome to Trace Vault. Your case file has been securely routed to our intelligence unit. A cyber analyst is currently reviewing the transaction paths provided. Please ensure all communication logs with the entity are uploaded in full. Expect a preliminary forensic feasibility update within 24–48 hours.`;
+    await Message.create({ from: 'Admin', message: initialMessage, clientEmail: newClient.email, clientId: newClient._id });
+
+    // Send email if SMTP configured
+    const smtpHost = process.env.SMTP_HOST;
+    if (smtpHost) {
+      try {
+        const transporter = nodemailer.createTransport({
+          host: process.env.SMTP_HOST,
+          port: process.env.SMTP_PORT ? parseInt(process.env.SMTP_PORT, 10) : 587,
+          secure: process.env.SMTP_SECURE === 'true',
+          auth: process.env.SMTP_USER ? { user: process.env.SMTP_USER, pass: process.env.SMTP_PASS } : undefined,
+        });
+        await transporter.sendMail({
+          from: process.env.EMAIL_FROM || 'no-reply@vaulttrace.org',
+          to: newClient.email,
+          subject: `Case Received & Registered: Case ID #${generatedCaseId} - Trace Vault`,
+          text: `We have received your case and assigned Case ID ${generatedCaseId}.\n\nDo NOT communicate further with the scammers. Log into your secure dashboard for updates.`,
+        });
+      } catch (err) {
+        console.error('Automated email send failed:', err);
+      }
+    } else {
+      console.log('SMTP not configured — automated email payload:', { to: newClient.email, subject: `Case Received & Registered: Case ID #${generatedCaseId}` });
+    }
+
+    const token = jwt.sign({ id: newClient.id, email: newClient.email, role: 'client' }, JWT_SECRET, { expiresIn: '24h' });
+    res.status(201).json({ message: 'Registration successful', caseId: generatedCaseId, token, user: { id: newClient.id, name: newClient.name, email: newClient.email, role: 'client' } });
   } catch (error) {
     console.error('Registration error:', error);
     res.status(500).json({ message: 'Registration failed' });
+  }
+});
+
+// Admin: SMTP test endpoint (mirror of vaulttrace server)
+app.post('/api/admin/smtp-test', authenticateToken, async (req, res) => {
+  if (req.user.role !== 'admin') return res.status(403).json({ message: 'Admin access required' });
+
+  try {
+    const { to } = req.body;
+    const smtpHost = process.env.SMTP_HOST;
+    if (!smtpHost) {
+      return res.json({ message: 'SMTP not configured, no email sent', to });
+    }
+
+    const transporter = nodemailer.createTransport({
+      host: process.env.SMTP_HOST,
+      port: process.env.SMTP_PORT ? parseInt(process.env.SMTP_PORT, 10) : 587,
+      secure: process.env.SMTP_SECURE === 'true',
+      auth: process.env.SMTP_USER ? { user: process.env.SMTP_USER, pass: process.env.SMTP_PASS } : undefined,
+    });
+
+    const info = await transporter.sendMail({
+      from: process.env.EMAIL_FROM || 'no-reply@vaulttrace.org',
+      to,
+      subject: 'Trace Vault — SMTP Test',
+      text: 'This is a test email from Trace Vault SMTP test endpoint.',
+    });
+
+    res.json({ message: 'Test email sent', info });
+  } catch (err) {
+    console.error('SMTP test error:', err);
+    res.status(500).json({ message: 'SMTP test failed', error: String(err) });
+  }
+});
+
+// Admin: escalate / set milestone stage for a client
+app.post('/api/admin/client/:id/escalate', authenticateToken, async (req, res) => {
+  if (req.user.role !== 'admin') return res.status(403).json({ message: 'Admin access required' });
+
+  try {
+    const dbConnected = mongoose.connection && mongoose.connection.readyState === 1;
+    if (!dbConnected && process.env.DEV_ALLOW_LOCAL === 'true') {
+      // Return a mocked success response in dev mode
+      return res.json({ message: 'Client milestone updated (dev)', trackingProgress: req.body.stage || 6 });
+    }
+
+    const client = await Client.findById(req.params.id);
+    if (!client) return res.status(404).json({ message: 'Client not found' });
+
+    const { stage } = req.body;
+    if (typeof stage === 'number') {
+      client.data.trackingProgress = stage;
+    } else {
+      client.data.trackingProgress = (client.data.trackingProgress || 0) + 1;
+    }
+
+    await client.save();
+    res.json({ message: 'Client milestone updated', trackingProgress: client.data.trackingProgress });
+  } catch (err) {
+    console.error('Escalate error:', err);
+    res.status(500).json({ message: 'Failed to escalate client' });
   }
 });
 
@@ -237,6 +388,17 @@ app.get('/api/admin/clients', authenticateToken, async (req, res) => {
 // Get client data
 app.get('/api/client/data', authenticateToken, async (req, res) => {
   try {
+    const dbConnected = mongoose.connection && mongoose.connection.readyState === 1;
+    if (!dbConnected && process.env.DEV_ALLOW_LOCAL === 'true') {
+      return res.json({
+        id: req.user.id,
+        name: req.user.name || 'Local Dev',
+        email: req.user.email || 'local@example.com',
+        caseId: `CASE-DEV-${Date.now().toString(36).slice(-6).toUpperCase()}`,
+        data: { trackingProgress: 5, verifiedLoss1: 0 },
+      });
+    }
+
     const client = await Client.findById(req.user.id);
     if (!client) {
       return res.status(404).json({ message: 'Client not found' });
@@ -347,9 +509,11 @@ app.put('/api/client/verified-loss-2', authenticateToken, async (req, res) => {
     }
 
     client.data.verifiedLoss2 = amount || 0;
+    // Normalize total entitlement on the server
+    client.data.totalEntitlement = (client.data.verifiedLoss1 || 0) + (client.data.verifiedLoss2 || 0);
     await client.save();
 
-    res.json({ message: 'Verified loss 2 updated successfully' });
+    res.json({ message: 'Verified loss 2 updated successfully', data: client.data });
   } catch (error) {
     console.error('Verified loss update error:', error);
     res.status(500).json({ message: 'Failed to update verified loss' });
@@ -458,8 +622,20 @@ app.delete('/api/admin/client/:id', authenticateToken, async (req, res) => {
   }
 });
 
-app.listen(PORT, () => {
-  console.log(`Server running on port ${PORT}`);
-});
-// At the end of your index.js / server.js file
-module.exports = app;
+// ... Your routes, middleware, and database connection logic above ...
+
+// Only run app.listen locally. Vercel handles the listening in production.
+if (process.env.NODE_ENV !== 'production') {
+    const PORT = process.env.PORT || 3000;
+    app.listen(PORT, () => {
+        console.log(`Server is running locally on port ${PORT}`);
+    });
+}
+
+// CRITICAL: Vercel needs this export to route incoming traffic to your Express app
+// Allow CommonJS `require()` in test runners while also supporting ESM imports
+if (typeof module !== 'undefined' && module.exports) {
+  module.exports = app;
+}
+
+export default app;

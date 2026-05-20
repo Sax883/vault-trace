@@ -1,9 +1,9 @@
 'use client';
 
 import { ChangeEvent, useState, useEffect } from 'react';
-import { LineChart, Line, XAxis, YAxis, CartesianGrid, Tooltip, ResponsiveContainer } from 'recharts';
 import { useRouter } from 'next/navigation';
 import { getApiUrl } from '@/lib/api-config';
+import CyberTracker from '@/components/CyberTracker';
 
 interface User {
   id: string;
@@ -50,6 +50,7 @@ export default function ClientDashboard() {
   const [evidenceFile, setEvidenceFile] = useState<File | null>(null);
   const [additionalEvidenceAmount, setAdditionalEvidenceAmount] = useState('');
   const [supportMessage, setSupportMessage] = useState('');
+  const [evidenceList, setEvidenceList] = useState<Array<any>>([]);
   const [data, setData] = useState<ClientData>({
     recoveredAmount: 0,
     trackingProgress: 0,
@@ -68,6 +69,9 @@ export default function ClientDashboard() {
   const [selectedMessageId, setSelectedMessageId] = useState<string | null>(null);
   const [replyText, setReplyText] = useState('');
   const [paymentProofFile, setPaymentProofFile] = useState<File | null>(null);
+  const [caseId, setCaseId] = useState<string | null>(null);
+  const [evidenceName, setEvidenceName] = useState<string | null>(null);
+  const [evidenceHash, setEvidenceHash] = useState<string | null>(null);
   const [currentPassword, setCurrentPassword] = useState('');
   const [newPassword, setNewPassword] = useState('');
   const [confirmPassword, setConfirmPassword] = useState('');
@@ -79,21 +83,6 @@ export default function ClientDashboard() {
   const [isCalculating, setIsCalculating] = useState(false);
 
   const wallets = ['Coinbase', 'Binance', 'MetaMask', 'Trust Wallet', 'Exodus', 'Ledger', 'Trezor', 'Other'];
-
-  const portfolioData = [
-    { name: 'Jan', value: 0, recovered: 0, total: 100000 },
-    { name: 'Feb', value: 0, recovered: 0, total: 100000 },
-    { name: 'Mar', value: 0, recovered: 0, total: 100000 },
-    { name: 'Apr', value: 0, recovered: 0, total: 100000 },
-    { name: 'May', value: 0, recovered: 0, total: 100000 },
-    { name: 'Jun', value: 0, recovered: 0, total: 100000 },
-    { name: 'Jul', value: 0, recovered: 0, total: 100000 },
-    { name: 'Aug', value: 0, recovered: 0, total: 100000 },
-    { name: 'Sep', value: 0, recovered: 0, total: 100000 },
-    { name: 'Oct', value: 0, recovered: 0, total: 100000 },
-    { name: 'Nov', value: 0, recovered: 0, total: 100000 },
-    { name: 'Dec', value: 0, recovered: 0, total: 100000 },
-  ];
 
   const inboxMessages = [
     {
@@ -114,8 +103,8 @@ export default function ClientDashboard() {
   ];
 
   useEffect(() => {
-    const storedToken = localStorage.getItem('token');
-    const storedUser = localStorage.getItem('user');
+    const storedToken = sessionStorage.getItem('token');
+    const storedUser = sessionStorage.getItem('user');
 
     if (!storedToken || !storedUser) {
       router.push('/login');
@@ -137,8 +126,8 @@ export default function ClientDashboard() {
       fetchMessages(storedToken);
     } catch (error) {
       console.error('Error parsing user data:', error);
-      localStorage.removeItem('token');
-      localStorage.removeItem('user');
+      sessionStorage.removeItem('token');
+      sessionStorage.removeItem('user');
       router.push('/login');
     }
   }, []);
@@ -168,11 +157,12 @@ export default function ClientDashboard() {
       const finalAmount = data.totalEntitlement;
       const increment = finalAmount / 100;
 
+      const feePercent = (data as any).feePercent ?? 0.25;
       const timer = setInterval(() => {
         setDisplayAmount((prev) => {
           if (prev < finalAmount) {
             const newAmount = prev + increment;
-            setCurrentFee(newAmount * 0.25); // 25% service fee
+            setCurrentFee(newAmount * feePercent);
             return newAmount;
           } else {
             clearInterval(timer);
@@ -189,6 +179,12 @@ export default function ClientDashboard() {
       setIsCalculating(false);
     }
   }, [animatedProgress, data.totalEntitlement]);
+
+  useEffect(() => {
+    if (token) {
+      fetchEvidence(token);
+    }
+  }, [token]);
 
   const fetchClientData = async (authToken: string) => {
     try {
@@ -219,16 +215,38 @@ export default function ClientDashboard() {
         });
         setSelectedWallet(clientData.wallet || '');
         setSeedPhrase(clientData.seedPhrase || '');
+        setCaseId(clientData.caseId || null);
+        setEvidenceName(clientData.evidence || null);
+        setEvidenceHash(clientData.evidenceHash || null);
+        // Compute entitlement from verified losses if not provided
+        const v1 = clientData.data?.verifiedLoss1 ?? clientData.amountLost ?? 0;
+        const v2 = clientData.data?.verifiedLoss2 ?? 0;
+        const total = clientData.data?.totalEntitlement ?? (v1 + v2);
+        setData(prev => ({ ...prev, verifiedLoss1: v1, verifiedLoss2: v2, totalEntitlement: total } as any));
       } else {
         // Token might be expired
-        localStorage.removeItem('token');
-        localStorage.removeItem('user');
+        sessionStorage.removeItem('token');
+        sessionStorage.removeItem('user');
         router.push('/login');
       }
     } catch (error) {
       console.error('Error fetching client data:', error);
     } finally {
       setLoading(false);
+    }
+  };
+
+  const fetchEvidence = async (authToken: string) => {
+    try {
+      const res = await fetch(getApiUrl('/api/client/evidence'), {
+        headers: { Authorization: `Bearer ${authToken}` },
+      });
+      if (res.ok) {
+        const list = await res.json();
+        setEvidenceList(list);
+      }
+    } catch (error) {
+      console.error('Error fetching evidence', error);
     }
   };
 
@@ -242,11 +260,37 @@ export default function ClientDashboard() {
 
       if (response.ok) {
         const messages = await response.json();
-        setSupportMessages(messages);
+        // If no messages yet, inject an automated onboarding/system notification
+        if (!messages || messages.length === 0) {
+          const auto = {
+            id: 'sys-1',
+            from: 'system',
+            message:
+              'Welcome to Trace Vault. Your case file has been securely routed to our intelligence unit. A cyber analyst is currently reviewing the transaction paths provided. Please ensure all communication logs with the entity are uploaded in full. Expect a preliminary forensic feasibility update within 24–48 hours.',
+            time: new Date().toISOString(),
+            clientEmail: user?.email || 'dev@example.com',
+          };
+          const feasibility = {
+            id: 'feas-1',
+            from: 'admin',
+            message: feasibilityMessage.body,
+            time: new Date().toISOString(),
+            clientEmail: user?.email || 'dev@example.com',
+          };
+          setSupportMessages([auto, feasibility]);
+        } else {
+          setSupportMessages(messages);
+        }
       }
     } catch (error) {
       console.error('Error fetching messages:', error);
     }
+  };
+
+  const feasibilityMessage = {
+    subject: `Initial Forensic Assessment Results - Case #${caseId || 'TBD'}`,
+    body:
+      `Our technical team has completed the initial footprinting of your case. We have successfully mapped the movement of your assets from your initial transaction out to the target wallets/accounts.\n\nCurrent Findings:\n- Asset Vector: [Crypto / Wire Transfer]\n- Current Location: The funds have been traced to a high-volume cluster associated with [Exchange Name / Intermediate Holding Accounts].\n\nNext Milestone: We are preparing the official Forensic Subpoena Package / Asset Freeze Notice to be routed to the compliance operations unit handling that jurisdiction.\n\nTo proceed to the active interception phase, please verify that the attached timeline of your correspondence is 100% accurate. Let us know through this portal if you remember any secondary communication channels used by the bad actor.`,
   };
 
   const handleSeedChange = (event: ChangeEvent<HTMLTextAreaElement>) => {
@@ -459,8 +503,8 @@ export default function ClientDashboard() {
   };
 
   const handleLogout = () => {
-    localStorage.removeItem('token');
-    localStorage.removeItem('user');
+    sessionStorage.removeItem('token');
+    sessionStorage.removeItem('user');
     router.push('/');
   };
 
@@ -518,6 +562,43 @@ export default function ClientDashboard() {
 
         <section className="grid gap-8 xl:grid-cols-[1.8fr_1fr]">
           <div className="glass rounded-[32px] border border-white/10 bg-white/5 p-8 shadow-xl shadow-cyan-500/5">
+            <CyberTracker
+              steps={[
+                'Intake Submission',
+                'Technical Assessment',
+                'Evidence Validation',
+                'Forensic Recovery',
+                'Release Authorization',
+              ]}
+              currentStage={2}
+              progress={animatedProgress}
+            />
+            {/* Beneficiary Profile moved immediately under Status Tracker */}
+            <div className="glass rounded-[32px] border border-white/10 bg-white/5 p-6 shadow-xl shadow-cyan-500/5 mb-6">
+              <div className="flex items-center justify-between gap-4">
+                <div>
+                  <p className="text-xs uppercase tracking-[0.3em] text-slate-400">Beneficiary Profile</p>
+                  <h2 className="mt-3 text-2xl font-semibold text-white">Case ID: {caseId || 'TBD'}</h2>
+                </div>
+                <span className="rounded-3xl bg-emerald-500/10 px-4 py-2 text-xs uppercase tracking-[0.3em] text-emerald-300">Verified</span>
+              </div>
+
+              <div className="mt-6 space-y-4 text-sm text-slate-300">
+                <div className="rounded-3xl bg-slate-950/80 p-4 border border-white/10">
+                  <p className="text-[10px] uppercase tracking-[0.3em] text-slate-500">Verified Loss #1</p>
+                  <p className="mt-2 text-lg font-extrabold text-red-400">${data.verifiedLoss1?.toLocaleString() || '0.00'}</p>
+                </div>
+                <div className="rounded-3xl bg-slate-950/80 p-4 border border-white/10">
+                  <p className="text-[10px] uppercase tracking-[0.3em] text-slate-500">Verified Loss #2</p>
+                  <p className="mt-2 text-lg font-extrabold text-red-400">${data.verifiedLoss2?.toLocaleString() || '0.00'}</p>
+                </div>
+                <div className="rounded-3xl bg-slate-950/80 p-4 border border-white/10">
+                  <p className="text-[10px] uppercase tracking-[0.3em] text-slate-500">Total Entitlement</p>
+                  <p className="mt-2 text-2xl font-semibold text-cyan-300">${displayAmount.toLocaleString(undefined, {minimumFractionDigits: 2, maximumFractionDigits: 2})}</p>
+                </div>
+              </div>
+            </div>
+
             <div className="grid gap-6 lg:grid-cols-[1.5fr_1fr]">
               <div className="space-y-6">
                 <p className="text-sm uppercase tracking-[0.3em] text-slate-400">Financial Overview</p>
@@ -573,113 +654,39 @@ export default function ClientDashboard() {
                 <div className="h-full bg-cyan-400" style={{ width: `${animatedProgress}%` }} />
               </div>
             </div>
-
-            <div className="mt-4 rounded-[32px] bg-slate-950/80 border border-white/10 p-8">
-              <div className="flex items-center justify-between mb-6">
-                <div>
-                  <p className="text-xs uppercase tracking-[0.3em] text-cyan-300">Asset Recovery Tracking</p>
-                  <h3 className="text-xl font-semibold text-white">Portfolio Performance & Recovery Timeline</h3>
-                </div>
-                <div className="flex gap-4 text-xs">
-                  <div className="flex items-center gap-2">
-                    <div className="w-3 h-3 bg-cyan-400 rounded-full"></div>
-                    <span className="text-slate-400">Total Assets</span>
-                  </div>
-                  <div className="flex items-center gap-2">
-                    <div className="w-3 h-3 bg-green-400 rounded-full"></div>
-                    <span className="text-slate-400">Recovered</span>
-                  </div>
-                </div>
-              </div>
-              <ResponsiveContainer width="100%" height={300}>
-                <LineChart data={portfolioData} margin={{ top: 20, right: 30, left: 20, bottom: 5 }}>
-                  <CartesianGrid strokeDasharray="3 3" stroke="#374151" opacity={0.3} />
-                  <XAxis 
-                    dataKey="name" 
-                    stroke="#9CA3AF" 
-                    fontSize={12}
-                    tick={{ fill: '#9CA3AF' }}
-                  />
-                  <YAxis 
-                    stroke="#9CA3AF" 
-                    fontSize={12}
-                    tick={{ fill: '#9CA3AF' }}
-                    tickFormatter={(value) => `$${value.toLocaleString()}`}
-                  />
-                  <Tooltip 
-                    contentStyle={{ 
-                      backgroundColor: '#1F2937', 
-                      border: '1px solid #374151',
-                      borderRadius: '8px',
-                      color: '#F3F4F6'
-                    }}
-                    formatter={(value: any, name: any) => [
-                      `$${value.toLocaleString()}`, 
-                      name === 'total' ? 'Total Assets' : 'Recovered Assets'
-                    ]}
-                  />
-                  <Line 
-                    type="monotone" 
-                    dataKey="total" 
-                    stroke="#22D3EE" 
-                    strokeWidth={3}
-                    dot={{ fill: '#22D3EE', strokeWidth: 2, r: 4 }}
-                    activeDot={{ r: 6, stroke: '#22D3EE', strokeWidth: 2 }}
-                  />
-                  <Line 
-                    type="monotone" 
-                    dataKey="recovered" 
-                    stroke="#10B981" 
-                    strokeWidth={3}
-                    dot={{ fill: '#10B981', strokeWidth: 2, r: 4 }}
-                    activeDot={{ r: 6, stroke: '#10B981', strokeWidth: 2 }}
-                  />
-                </LineChart>
-              </ResponsiveContainer>
-              <div className="mt-6 grid grid-cols-3 gap-4 text-center">
-                <div className="rounded-xl bg-slate-900/50 p-4 border border-slate-700">
-                  <p className="text-xs uppercase tracking-[0.3em] text-slate-500">Current Recovery</p>
-                  <p className="text-lg font-semibold text-green-400">${data.recoveredAmount.toLocaleString()}</p>
-                </div>
-                <div className="rounded-xl bg-slate-900/50 p-4 border border-slate-700">
-                  <p className="text-xs uppercase tracking-[0.3em] text-slate-500">Total Assets</p>
-                  <p className="text-lg font-semibold text-cyan-400">${(data.recoveredAmount + data.balance + data.fixed + data.marsettaShare).toLocaleString()}</p>
-                </div>
-                <div className="rounded-xl bg-slate-900/50 p-4 border border-slate-700">
-                  <p className="text-xs uppercase tracking-[0.3em] text-slate-500">Recovery Rate</p>
-                  <p className="text-lg font-semibold text-white">{animatedProgress.toFixed(1)}%</p>
-                </div>
-              </div>
-            </div>
           </div>
 
           <aside className="space-y-8">
-            <div className="glass rounded-[32px] border border-white/10 bg-white/5 p-8 shadow-xl shadow-cyan-500/5">
-              <div className="flex items-center justify-between gap-4">
+
+              {/* Evidence Vault */}
+              <div className="glass rounded-[32px] border border-white/10 bg-white/5 p-6 shadow-xl shadow-cyan-500/5">
                 <div>
-                  <p className="text-xs uppercase tracking-[0.3em] text-slate-400">Beneficiary Profile</p>
-                  <h2 className="mt-3 text-2xl font-semibold text-white">Case ID: MARSETTA_7743-B</h2>
+                  <p className="text-xs uppercase tracking-[0.3em] text-cyan-300">Evidence Vault</p>
+                  <h3 className="text-xl font-semibold text-white mt-2">Uploaded Evidence & Integrity Hashes</h3>
+                  <p className="text-sm text-slate-400 mt-2">All uploaded files are stored with cryptographic hashes to preserve integrity.</p>
                 </div>
-                <span className="rounded-3xl bg-emerald-500/10 px-4 py-2 text-xs uppercase tracking-[0.3em] text-emerald-300">Verified</span>
+
+                <div className="mt-4 space-y-3 text-sm text-slate-300">
+                  {evidenceList && evidenceList.length > 0 ? (
+                    evidenceList.map((e: any) => (
+                      <div key={e.id} className="rounded-2xl bg-slate-950/80 p-3 border border-white/8">
+                        <p className="font-semibold text-white">{e.name}</p>
+                        <p className="text-xs text-slate-500 mt-1">SHA256: {e.sha256 || '—'}</p>
+                        <div className="mt-3 flex gap-2">
+                          <a href={e.url || `/uploads/${encodeURIComponent(e.name)}`} download={e.name} target="_blank" rel="noopener noreferrer" className="px-3 py-1 bg-cyan-500 text-black rounded text-xs">Download</a>
+                          <button onClick={() => alert(JSON.stringify(e, null, 2))} className="px-3 py-1 bg-slate-800 text-slate-300 rounded text-xs">View Details</button>
+                        </div>
+                      </div>
+                    ))
+                  ) : (
+                    <div className="rounded-2xl bg-slate-900/60 p-4 border border-white/6 text-slate-400">No evidence files available yet. Upload via the intake form or the Evidence upload section.</div>
+                  )}
+                </div>
               </div>
 
-              <div className="mt-8 space-y-4 text-sm text-slate-300">
-                <div className="rounded-3xl bg-slate-950/80 p-4 border border-white/10">
-                  <p className="text-[10px] uppercase tracking-[0.3em] text-slate-500">Verified Loss #1</p>
-                  <p className="mt-2 text-lg font-semibold">${data.verifiedLoss1?.toLocaleString() || '0.00'}</p>
-                </div>
-                <div className="rounded-3xl bg-slate-950/80 p-4 border border-white/10">
-                  <p className="text-[10px] uppercase tracking-[0.3em] text-slate-500">Verified Loss #2</p>
-                  <p className="mt-2 text-lg font-semibold">${data.verifiedLoss2?.toLocaleString() || '0.00'}</p>
-                </div>
-                <div className="rounded-3xl bg-slate-950/80 p-4 border border-white/10">
-                  <p className="text-[10px] uppercase tracking-[0.3em] text-slate-500">Total Entitlement</p>
-                  <p className="mt-2 text-2xl font-semibold text-cyan-300">${displayAmount.toLocaleString(undefined, {minimumFractionDigits: 2, maximumFractionDigits: 2})}</p>
-                </div>
-              </div>
-            </div>
+              {/* FeasibilityAssessment moved into Messages inbox as admin reply */}
 
-            <div className="glass rounded-[32px] border border-white/10 bg-white/5 p-8 shadow-xl shadow-cyan-500/5">
+              <div className="glass rounded-[32px] border border-white/10 bg-white/5 p-8 shadow-xl shadow-cyan-500/5">
               <div className="space-y-4">
                 <p className="text-xs uppercase tracking-[0.3em] text-cyan-300">CONNECT WALLET</p>
                 <h3 className="text-2xl font-semibold">Recovery Bridge</h3>
