@@ -1,10 +1,14 @@
 import dns from 'dns';
 import mongoose from 'mongoose';
 
-const MONGODB_URI = process.env.MONGODB_URI!;
+const MONGODB_URI = process.env.MONGODB_URI || '';
 
-if (!MONGODB_URI) {
-  throw new Error('Please define the MONGODB_URI environment variable inside .env.local');
+if (!MONGODB_URI && process.env.DEV_ALLOW_LOCAL !== 'true') {
+  if (process.env.NODE_ENV !== 'production') {
+    console.warn('[mongodb.ts] MONGODB_URI not set. Running in local dev mode will fail DB operations.');
+  } else {
+    console.warn('[mongodb.ts] MONGODB_URI not set. Running in production without a database will fail DB operations.');
+  }
 }
 
 let cached = (global as any).mongoose;
@@ -47,13 +51,15 @@ async function connectDB() {
   }
 
   if (!cached.promise) {
-    const opts = {
-      bufferCommands: false,
-    };
-
-    cached.promise = buildMongoUri(MONGODB_URI).then((uri) =>
-      mongoose.connect(uri, opts).then((mongoose) => mongoose)
-    );
+    // If running in DEV_ALLOW_LOCAL mode and no MONGODB_URI is present, return a resolved null
+    if (!MONGODB_URI && process.env.DEV_ALLOW_LOCAL === 'true') {
+      cached.promise = Promise.resolve(null);
+    } else {
+      const opts = { bufferCommands: false };
+      cached.promise = buildMongoUri(MONGODB_URI).then((uri) =>
+        mongoose.connect(uri, opts).then((mongoose) => mongoose)
+      );
+    }
   }
 
   try {

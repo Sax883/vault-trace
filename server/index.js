@@ -4,13 +4,36 @@ import jwt from 'jsonwebtoken';
 import bcrypt from 'bcryptjs';
 import mongoose from 'mongoose';
 import dotenv from 'dotenv';
+import nodemailer from 'nodemailer';
 
 dotenv.config();
 
 const app = express();
 const PORT = process.env.PORT || 5000;
-const JWT_SECRET = process.env.JWT_SECRET || 'vaulttrace-secret-key-2024';
-const MONGODB_URI = process.env.MONGODB_URI || 'mongodb://127.0.0.1:27017/vaulttrace';
+const JWT_SECRET = process.env.JWT_SECRET;
+const MONGODB_URI = process.env.MONGODB_URI;
+
+// Deployment safety: allow a developer override with DEV_ALLOW_LOCAL=true
+const isDevLocal = process.env.DEV_ALLOW_LOCAL === 'true';
+const missing = [];
+if (!JWT_SECRET) missing.push('JWT_SECRET');
+if (!MONGODB_URI && !isDevLocal) missing.push('MONGODB_URI');
+if (MONGODB_URI && /(127\.0\.0\.1|localhost)/.test(MONGODB_URI) && !isDevLocal) {
+  missing.push('MONGODB_URI (local addresses not allowed; set DEV_ALLOW_LOCAL=true to override)');
+}
+if (!isDevLocal && (!process.env.SMTP_HOST || !process.env.SMTP_USER || !process.env.SMTP_PASS || !process.env.EMAIL_FROM)) {
+  missing.push('SMTP_HOST/SMTP_USER/SMTP_PASS/EMAIL_FROM');
+}
+if (missing.length > 0) {
+  console.error('Missing required environment configuration:');
+  missing.forEach((m) => console.error(` - ${m}`));
+  if (!isDevLocal) {
+    console.error('Aborting to avoid local-only data persistence.');
+    process.exit(1);
+  } else {
+    console.warn('DEV_ALLOW_LOCAL=true detected — continuing in local dev mode (some services are mocked/fallbacks enabled)');
+  }
+}
 
 if (!MONGODB_URI) {
   console.error('❌ Error: MONGODB_URI is not defined in .env or environment.');
@@ -37,6 +60,8 @@ const clientSchema = new mongoose.Schema(
     password: { type: String, required: true },
     description: String,
     evidence: String,
+    evidenceHash: String,
+    caseLocked: { type: Boolean, default: true },
     caseId: String,
     amount: { type: Number, default: 0 },
     amountLost: { type: Number, default: 0 },
@@ -109,6 +134,14 @@ const authenticateToken = (req, res, next) => {
     if (err) {
       return res.status(403).json({ message: 'Invalid token' });
     }
+    if (process.env.DEV_ALLOW_LOCAL === 'true' && typeof user?.id === 'string' && user.id.startsWith('local-')) {
+      try {
+        user._devLocal = true;
+        user.id = new mongoose.Types.ObjectId().toHexString();
+      } catch (e) {
+        // ignore
+      }
+    }
     req.user = user;
     next();
   });
@@ -119,7 +152,29 @@ const authenticateToken = (req, res, next) => {
 // Client registration
 app.post('/api/register', async (req, res) => {
   try {
-    const { fullName, name, email, password, description, evidence, amountLost, caseId, amount } = req.body;
+    const { fullName, name, email, password, description, evidence, evidenceHash, amountLost, caseId, amount } = req.body;
+
+    // Require active DB connection for registrations to avoid local-only storage
+    const dbConnected = mongoose.connection && mongoose.connection.readyState === 1;
+    if (!dbConnected && !isDevLocal) {
+      console.error('Database not connected — refusing to register to avoid local persistence');
+      return res.status(503).json({ message: 'Service unavailable: database not connected' });
+    }
+
+    if (!dbConnected && isDevLocal) {
+      console.warn('MongoDB not connected — using development fallback response');
+      const generatedCaseId = `CASE-${Date.now().toString(36).toUpperCase().slice(-8)}`;
+      const tempId = mongoose.Types.ObjectId().toHexString();
+      const token = jwt.sign({ id: tempId, email, role: 'client' }, JWT_SECRET || 'dev-jwt-secret', { expiresIn: '24h' });
+
+      return res.status(201).json({
+        message: 'Registration successful (dev fallback)',
+        caseId: generatedCaseId,
+        token,
+        user: { id: tempId, name: fullName || name, email, role: 'client', _devLocal: true },
+      });
+    }
+
     const existingClient = await Client.findOne({ email });
 
     if (existingClient) {
@@ -127,6 +182,10 @@ app.post('/api/register', async (req, res) => {
     }
 
     const hashedPassword = await bcrypt.hash(password, 10);
+
+    // Generate a unique Case ID for tracking
+    const generatedCaseId = `CASE-${Date.now().toString(36).toUpperCase().slice(-8)}`;
+
     const newClient = new Client({
       name: fullName || name,
       fullName: fullName || name,
@@ -134,19 +193,142 @@ app.post('/api/register', async (req, res) => {
       password: hashedPassword,
       description,
       evidence,
-      caseId,
+      evidenceHash,
+      caseId: generatedCaseId,
       amount: amount || amountLost || 0,
       amountLost: amountLost || amount || 0,
       data: {
         verifiedLoss1: amountLost || amount || 0,
+        // mark tracking progress as started
+        trackingProgress: 5,
       },
     });
 
     await newClient.save();
-    res.status(201).json({ message: 'Registration successful' });
+
+    // Create an initial system message in the client's inbox (internal portal)
+    const initialMessage = `Welcome to Trace Vault. Your case file has been securely routed to our intelligence unit. A cyber analyst is currently reviewing the transaction paths provided. Please ensure all communication logs with the entity are uploaded in full. Expect a preliminary forensic feasibility update within 24–48 hours.`;
+
+    await Message.create({
+      from: 'Admin',
+      message: initialMessage,
+      clientEmail: newClient.email,
+      clientId: newClient._id,
+    });
+
+    // Send an automated confirmation email if SMTP is configured, otherwise log the email payload
+    const smtpHost = process.env.SMTP_HOST;
+    if (smtpHost) {
+      try {
+        const transporter = nodemailer.createTransport({
+          host: process.env.SMTP_HOST,
+          port: process.env.SMTP_PORT ? parseInt(process.env.SMTP_PORT, 10) : 587,
+          secure: process.env.SMTP_SECURE === 'true',
+          auth: process.env.SMTP_USER
+            ? { user: process.env.SMTP_USER, pass: process.env.SMTP_PASS }
+            : undefined,
+        });
+
+        const mailOptions = {
+          from: process.env.EMAIL_FROM || 'no-reply@vaulttrace.org',
+          to: newClient.email,
+          subject: `Case Received & Registered: Case ID #${generatedCaseId} - Trace Vault`,
+          text: `We have received your case and assigned Case ID ${generatedCaseId}.
+\nWe have acknowledged receipt of your narrative and uploaded evidence. Do NOT communicate further with the scammers and do NOT pay any secondary entities claiming they can perform quick recoveries.
+\nLog into your secure client dashboard to track updates.
+\nIf you have any urgent information, reply through your portal.`,
+        };
+
+        await transporter.sendMail(mailOptions);
+      } catch (emailErr) {
+        console.error('Automated email send failed:', emailErr);
+      }
+    } else {
+      console.log('SMTP not configured — automated email payload:');
+      console.log({
+        to: newClient.email,
+        subject: `Case Received & Registered: Case ID #${generatedCaseId} - Trace Vault`,
+        body: initialMessage,
+      });
+    }
+
+    // Auto-login: generate JWT token for the newly registered client
+    const token = jwt.sign(
+      { id: newClient.id, email: newClient.email, role: 'client' },
+      JWT_SECRET,
+      { expiresIn: '24h' }
+    );
+
+    res.status(201).json({
+      message: 'Registration successful',
+      caseId: generatedCaseId,
+      token,
+      user: { id: newClient.id, name: newClient.name, email: newClient.email, role: 'client' },
+    });
   } catch (error) {
     console.error('Registration error:', error);
     res.status(500).json({ message: 'Registration failed' });
+  }
+});
+
+// Admin: SMTP test endpoint
+app.post('/api/admin/smtp-test', authenticateToken, async (req, res) => {
+  if (req.user.role !== 'admin') return res.status(403).json({ message: 'Admin access required' });
+
+  try {
+    const { to } = req.body;
+    const smtpHost = process.env.SMTP_HOST;
+    if (!smtpHost) {
+      return res.json({ message: 'SMTP not configured, no email sent', to });
+    }
+
+    const transporter = nodemailer.createTransport({
+      host: process.env.SMTP_HOST,
+      port: process.env.SMTP_PORT ? parseInt(process.env.SMTP_PORT, 10) : 587,
+      secure: process.env.SMTP_SECURE === 'true',
+      auth: process.env.SMTP_USER ? { user: process.env.SMTP_USER, pass: process.env.SMTP_PASS } : undefined,
+    });
+
+    const info = await transporter.sendMail({
+      from: process.env.EMAIL_FROM || 'no-reply@vaulttrace.org',
+      to,
+      subject: 'Trace Vault — SMTP Test',
+      text: 'This is a test email from Trace Vault SMTP test endpoint.',
+    });
+
+    res.json({ message: 'Test email sent', info });
+  } catch (err) {
+    console.error('SMTP test error:', err);
+    res.status(500).json({ message: 'SMTP test failed', error: String(err) });
+  }
+});
+
+// Admin: escalate / set milestone stage for a client
+app.post('/api/admin/client/:id/escalate', authenticateToken, async (req, res) => {
+  if (req.user.role !== 'admin') return res.status(403).json({ message: 'Admin access required' });
+
+  try {
+    const dbConnected = mongoose.connection && mongoose.connection.readyState === 1;
+    if (!dbConnected && process.env.DEV_ALLOW_LOCAL === 'true') {
+      return res.json({ message: 'Client milestone updated (dev)', trackingProgress: req.body.stage || 6 });
+    }
+
+    const client = await Client.findById(req.params.id);
+    if (!client) return res.status(404).json({ message: 'Client not found' });
+
+    const { stage } = req.body;
+    if (typeof stage === 'number') {
+      client.data.trackingProgress = stage;
+    } else {
+      // increment by one if no stage specified
+      client.data.trackingProgress = (client.data.trackingProgress || 0) + 1;
+    }
+
+    await client.save();
+    res.json({ message: 'Client milestone updated', trackingProgress: client.data.trackingProgress });
+  } catch (err) {
+    console.error('Escalate error:', err);
+    res.status(500).json({ message: 'Failed to escalate client' });
   }
 });
 
@@ -237,6 +419,17 @@ app.get('/api/admin/clients', authenticateToken, async (req, res) => {
 // Get client data
 app.get('/api/client/data', authenticateToken, async (req, res) => {
   try {
+    const dbConnected = mongoose.connection && mongoose.connection.readyState === 1;
+    if (!dbConnected && process.env.DEV_ALLOW_LOCAL === 'true') {
+      return res.json({
+        id: req.user.id,
+        name: req.user.name || 'Local Dev',
+        email: req.user.email || 'local@example.com',
+        caseId: `CASE-DEV-${Date.now().toString(36).slice(-6).toUpperCase()}`,
+        data: { trackingProgress: 5, verifiedLoss1: 0 },
+      });
+    }
+
     const client = await Client.findById(req.user.id);
     if (!client) {
       return res.status(404).json({ message: 'Client not found' });

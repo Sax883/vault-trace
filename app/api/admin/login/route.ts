@@ -7,7 +7,18 @@ export async function POST(request: NextRequest) {
 
     const adminEmail = process.env.ADMIN_EMAIL;
     const adminPassword = process.env.ADMIN_PASSWORD;
-    const jwtSecret = process.env.JWT_SECRET;
+    const jwtSecret = process.env.JWT_SECRET || (process.env.DEV_ALLOW_LOCAL === 'true' ? 'dev-local-jwt' : undefined);
+
+    // If required env vars are missing, allow a dev fallback when explicitly enabled
+    if ((!adminEmail || !adminPassword) && process.env.DEV_ALLOW_LOCAL === 'true') {
+      if (!jwtSecret) {
+        console.error('Admin login error: missing JWT_SECRET in dev fallback');
+        return NextResponse.json({ message: 'Server misconfiguration' }, { status: 500 });
+      }
+      const token = jwt.sign({ email, role: 'admin' }, jwtSecret, { expiresIn: '1h' });
+      const user = { email, role: 'admin' };
+      return NextResponse.json({ token, user, message: 'Admin login successful (dev fallback)' }, { status: 200 });
+    }
 
     if (!adminEmail || !adminPassword || !jwtSecret) {
       console.error('Admin login error: missing environment variables');

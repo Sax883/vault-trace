@@ -9,7 +9,18 @@ export function verifyToken(request: NextRequest) {
 
   const token = authHeader.substring(7);
   try {
-    const decoded = jwt.verify(token, process.env.JWT_SECRET!) as any;
+    const secret = process.env.JWT_SECRET || (process.env.DEV_ALLOW_LOCAL === 'true' ? 'dev-local-jwt' : undefined);
+    if (!secret) return null;
+    // Accept simple dev tokens (non-JWT) in DEV_ALLOW_LOCAL mode.
+    if (process.env.DEV_ALLOW_LOCAL === 'true') {
+      if (token.startsWith('dev-admin-token-')) {
+        return { id: token.replace('dev-admin-token-', ''), email: 'dev-admin@example.com', role: 'admin' } as any;
+      }
+      if (token.startsWith('dev-token-')) {
+        return { id: token.replace('dev-token-', ''), email: 'dev@example.com', role: 'client' } as any;
+      }
+    }
+    const decoded = jwt.verify(token, secret as string) as any;
     return decoded;
   } catch (error) {
     return null;

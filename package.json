@@ -7,12 +7,14 @@
     "dev": "next dev",
     "build": "next build",
     "start": "next start",
+    "test": "mocha test/**/*.test.js --exit --timeout 10000",
     "lint": "eslint",
     "server": "node server/index.js",
     "dev:full": "concurrently \"npm run server\" \"npm run dev\""
   },
   "dependencies": {
     "bcryptjs": "^2.4.3",
+    "nodemailer": "^6.9.4",
     "concurrently": "^8.2.2",
     "cors": "^2.8.5",
     "dotenv": "^17.4.2",
@@ -27,6 +29,9 @@
     "recharts": "^3.8.1"
   },
   "devDependencies": {
+    "chai": "^4.3.8",
+    "mocha": "^10.2.0",
+    "supertest": "^6.3.3",
     "@tailwindcss/postcss": "^4",
     "@types/bcryptjs": "^2.4.6",
     "@types/cors": "^2.8.17",

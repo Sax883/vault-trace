@@ -8,11 +8,11 @@ const milestones = [
   { id: 4, title: 'Final Advisory Report', desc: 'Compiling forensic findings for recovery authorization.', icon: <ShieldCheck size={20}/> },
 ];
 
-const MilestoneTracker = ({ currentStage = 2 }) => {
+const MilestoneTracker = ({ currentStage = 2, caseId = 'VT-7743-B' }: { currentStage?: number; caseId?: string }) => {
   return (
     <div className="bg-[#0a0a0a] border border-cyan-900/30 p-8 rounded-lg max-w-2xl w-full font-mono">
       <div className="flex items-center justify-between mb-10">
-        <h2 className="text-white text-lg font-bold tracking-widest uppercase">Case Timeline: <span className="text-cyan-400">VT-7743-B</span></h2>
+        <h2 className="text-white text-lg font-bold tracking-widest uppercase">Case Timeline: <span className="text-cyan-400">{caseId}</span></h2>
         <span className="text-[10px] text-cyan-600 animate-pulse">● SYSTEM LIVE</span>
       </div>
 

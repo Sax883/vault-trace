@@ -21,7 +21,28 @@ export async function GET(request: NextRequest) {
     const url = new URL(request.url);
     const clientEmail = url.searchParams.get('clientEmail');
 
-    await connectDB();
+    const conn = await connectDB();
+    
+    // DEV_ALLOW_LOCAL fallback: return mocked messages when no DB
+    if (!conn && process.env.DEV_ALLOW_LOCAL === 'true') {
+      const mockMessages = [
+        {
+          id: 'msg-1',
+          from: 'admin',
+          message: 'Your case has been assigned to our neural-AI correlation engine.',
+          time: new Date().toISOString(),
+          clientEmail: decoded.email || 'dev@example.com',
+        },
+        {
+          id: 'msg-2',
+          from: 'admin',
+          message: 'Please provide additional documentation to proceed with verification.',
+          time: new Date().toISOString(),
+          clientEmail: decoded.email || 'dev@example.com',
+        },
+      ];
+      return NextResponse.json(mockMessages, { status: 200 });
+    }
 
     let messages;
     if (clientEmail) {

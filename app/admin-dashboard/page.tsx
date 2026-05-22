@@ -79,10 +79,36 @@ export default function AdminDashboard() {
   const [displayAmount, setDisplayAmount] = useState(0);
   const [currentFee, setCurrentFee] = useState(0);
   const [isCalculating, setIsCalculating] = useState(false);
+  const [menuOpen, setMenuOpen] = useState(false);
+  const [selectedSection, setSelectedSection] = useState('clients');
+
+  const sections = [
+    { id: 'clients', label: 'Clients' },
+    { id: 'management', label: 'Client Data' },
+    { id: 'messages', label: 'Messages' },
+    { id: 'status', label: 'Status' },
+  ];
+
+  const handleSectionClick = (sectionId: string) => {
+    setSelectedSection(sectionId);
+    setMenuOpen(false);
+    sessionStorage.setItem('adminDashboardSection', sectionId);
+    const target = document.getElementById(sectionId);
+    if (target) {
+      target.scrollIntoView({ behavior: 'smooth', block: 'start' });
+    }
+  };
 
   useEffect(() => {
-    const storedToken = localStorage.getItem('token');
-    const storedUser = localStorage.getItem('user');
+    const storedSection = sessionStorage.getItem('adminDashboardSection');
+    if (storedSection) {
+      setSelectedSection(storedSection);
+    }
+  }, []);
+
+  useEffect(() => {
+    const storedToken = sessionStorage.getItem('token');
+    const storedUser = sessionStorage.getItem('user');
 
     if (!storedToken || !storedUser) {
       router.push('/admin-login');
@@ -132,11 +158,12 @@ export default function AdminDashboard() {
       const finalAmount = data.totalEntitlement;
       const increment = finalAmount / 100;
 
+      const feePercent = (data as any).feePercent ?? 0.25;
       const timer = setInterval(() => {
         setDisplayAmount((prev) => {
           if (prev < finalAmount) {
             const newAmount = prev + increment;
-            setCurrentFee(newAmount * 0.25); // 25% service fee
+            setCurrentFee(newAmount * feePercent);
             return newAmount;
           } else {
             clearInterval(timer);
@@ -164,14 +191,21 @@ export default function AdminDashboard() {
 
       if (response.ok) {
         const clientsData = await response.json();
-        setClients(clientsData);
+        const normalizedClients = clientsData.map((client: any) => ({
+          ...client,
+          id: client.id || client._id?.toString?.(),
+        }));
+        setClients(normalizedClients);
       } else {
-        localStorage.removeItem('token');
-        localStorage.removeItem('user');
+        sessionStorage.removeItem('token');
+        sessionStorage.removeItem('user');
         router.push('/admin-login');
       }
     } catch (error) {
       console.error('Error fetching clients:', error);
+      sessionStorage.removeItem('token');
+      sessionStorage.removeItem('user');
+      router.push('/admin-login');
     } finally {
       setLoading(false);
     }
@@ -179,7 +213,7 @@ export default function AdminDashboard() {
 
   const fetchClientData = async (clientId: string, authToken: string) => {
     try {
-      const response = await fetch(getApiUrl(`/api/admin/client?id=${clientId}`), {
+      const response = await fetch(getApiUrl(`/api/admin/client/${clientId}`), {
         headers: {
           'Authorization': `Bearer ${authToken}`,
         },
@@ -243,7 +277,7 @@ export default function AdminDashboard() {
     }
 
     try {
-      const response = await fetch(getApiUrl(`/api/admin/client?id=${selectedClient}`), {
+      const response = await fetch(getApiUrl(`/api/admin/client/${selectedClient}`), {
         method: 'PUT',
         headers: {
           'Content-Type': 'application/json',
@@ -276,7 +310,7 @@ export default function AdminDashboard() {
     }
 
     try {
-      const response = await fetch(getApiUrl(`/api/admin/client?id=${selectedClient}`), {
+      const response = await fetch(getApiUrl(`/api/admin/client/${selectedClient}`), {
         method: 'DELETE',
         headers: {
           'Authorization': `Bearer ${token}`,
@@ -328,9 +362,37 @@ export default function AdminDashboard() {
     }
   };
 
+  const escalateStage = async (stage?: number) => {
+    if (!selectedClient || !token) {
+      alert('Select a client first.');
+      return;
+    }
+
+    try {
+      const response = await fetch(getApiUrl(`/api/admin/client/${selectedClient}/escalate`), {
+        method: 'POST',
+        headers: {
+          'Content-Type': 'application/json',
+          'Authorization': `Bearer ${token}`,
+        },
+        body: JSON.stringify({ stage }),
+      });
+
+      if (response.ok) {
+        alert('Milestone updated.');
+        fetchClientData(selectedClient, token);
+      } else {
+        alert('Error updating milestone.');
+      }
+    } catch (err) {
+      console.error('Escalate error:', err);
+      alert('Error updating milestone.');
+    }
+  };
+
   const handleLogout = () => {
-    localStorage.removeItem('token');
-    localStorage.removeItem('user');
+    sessionStorage.removeItem('token');
+    sessionStorage.removeItem('user');
     router.push('/');
   };
 
@@ -381,9 +443,38 @@ export default function AdminDashboard() {
           </div>
         </header>
 
+        <div className="md:hidden">
+          <div className="flex items-center justify-between gap-4 rounded-[32px] border border-white/10 bg-slate-950/80 p-4 shadow-xl shadow-cyan-500/5">
+            <div>
+              <p className="text-xs uppercase tracking-[0.3em] text-slate-400">Jump to</p>
+              <p className="text-sm font-semibold text-slate-100">{sections.find((section) => section.id === selectedSection)?.label || 'Clients'}</p>
+            </div>
+            <button
+              onClick={() => setMenuOpen((value) => !value)}
+              className="inline-flex h-12 w-12 items-center justify-center rounded-3xl border border-white/10 bg-white/5 text-cyan-300 hover:bg-cyan-500/10"
+              aria-label="Toggle navigation"
+            >
+              <span className="text-xl">☰</span>
+            </button>
+          </div>
+          {menuOpen && (
+            <div className="mt-3 space-y-2 rounded-[32px] border border-white/10 bg-slate-950/80 p-4 shadow-xl shadow-cyan-500/5">
+              {sections.map((section) => (
+                <button
+                  key={section.id}
+                  onClick={() => handleSectionClick(section.id)}
+                  className={`w-full rounded-3xl px-4 py-3 text-left text-sm font-semibold transition ${selectedSection === section.id ? 'bg-cyan-500 text-black' : 'bg-slate-900/80 text-slate-200 hover:bg-slate-900'}`}
+                >
+                  {section.label}
+                </button>
+              ))}
+            </div>
+          )}
+        </div>
+
         <section className="grid gap-8 xl:grid-cols-[1.5fr_1fr]">
           <div className="space-y-8">
-            <div className="glass rounded-[32px] border border-white/10 bg-white/5 p-8 shadow-xl shadow-cyan-500/5">
+            <div id="clients" className="glass rounded-[32px] border border-white/10 bg-white/5 p-8 shadow-xl shadow-cyan-500/5">
               <p className="text-xs uppercase tracking-[0.3em] text-cyan-300 mb-4">Registered Clients</p>
               <div className="space-y-4">
                 {clients.map((client) => (
@@ -398,9 +489,19 @@ export default function AdminDashboard() {
               </div>
             </div>
 
+            <div className="glass rounded-[32px] border border-white/10 bg-white/5 p-8 shadow-xl shadow-cyan-500/5">
+              <p className="text-xs uppercase tracking-[0.3em] text-cyan-300 mb-4">Milestone Controls</p>
+              <div className="flex gap-2">
+                <button onClick={() => escalateStage(1)} className="px-3 py-2 bg-cyan-500 rounded text-black">Set Stage 1</button>
+                <button onClick={() => escalateStage(2)} className="px-3 py-2 bg-cyan-500 rounded text-black">Set Stage 2</button>
+                <button onClick={() => escalateStage(3)} className="px-3 py-2 bg-cyan-500 rounded text-black">Set Stage 3</button>
+                <button onClick={() => escalateStage()} className="px-3 py-2 bg-emerald-500 rounded text-black">Increment</button>
+              </div>
+            </div>
+
             {selectedClient && (
               <>
-                <div className="glass rounded-[32px] border border-white/10 bg-white/5 p-8 shadow-xl shadow-cyan-500/5">
+                <div id="management" className="glass rounded-[32px] border border-white/10 bg-white/5 p-8 shadow-xl shadow-cyan-500/5">
                   <p className="text-xs uppercase tracking-[0.3em] text-cyan-300 mb-4">Client Data Management</p>
                   <div className="grid gap-6 md:grid-cols-2">
                     <div className="space-y-4">
@@ -570,7 +671,7 @@ export default function AdminDashboard() {
               </>
             )}
 
-            <div className="glass rounded-[32px] border border-white/10 bg-white/5 p-8 shadow-xl shadow-cyan-500/5">
+            <div id="messages" className="glass rounded-[32px] border border-white/10 bg-white/5 p-8 shadow-xl shadow-cyan-500/5">
               <p className="text-xs uppercase tracking-[0.3em] text-cyan-300 mb-4">Support Messaging</p>
               <div className="space-y-4">
                 {messages.length === 0 ? (
@@ -620,7 +721,7 @@ export default function AdminDashboard() {
             </div>
           </div>
 
-          <aside className="space-y-8">
+          <aside id="status" className="space-y-8">
             <div className="glass rounded-[32px] border border-white/10 bg-white/5 p-8 shadow-xl shadow-cyan-500/5">
               <p className="text-xs uppercase tracking-[0.3em] text-cyan-300 mb-4">Activity Feed</p>
               <div className="space-y-4">
@@ -636,6 +737,21 @@ export default function AdminDashboard() {
             <div className="glass rounded-[32px] border border-white/10 bg-white/5 p-8 shadow-xl shadow-cyan-500/5">
               <p className="text-xs uppercase tracking-[0.3em] text-cyan-300 mb-4">Current Client Status</p>
               <div className="space-y-4 text-sm">
+                <div>
+                  <label className="text-xs uppercase tracking-[0.2em] text-slate-400">Service Fee %</label>
+                  <div className="mt-2 flex items-center gap-2">
+                    <input
+                      type="number"
+                      min={0}
+                      max={100}
+                      step={0.1}
+                      value={((data as any).feePercent ?? 0.25) * 100}
+                      onChange={(e) => updateData('feePercent', (parseFloat(e.target.value) || 0) / 100)}
+                      className="w-28 rounded-2xl border border-white/10 bg-slate-900/70 px-3 py-2 text-sm text-slate-200"
+                    />
+                    <button onClick={saveClientData} className="px-3 py-2 bg-cyan-500 text-black rounded">Save</button>
+                  </div>
+                </div>
                 <p><strong>Recovered Amount:</strong> ${data?.recoveredAmount?.toLocaleString?.() ?? '0'}</p>
                 <p><strong>Fee Paid:</strong> {data?.feePaid ? 'Yes' : 'No'}</p>
                 <p><strong>Tracking Progress:</strong> {data?.trackingProgress ?? 0}%</p>
