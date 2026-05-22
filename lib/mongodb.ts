@@ -2,14 +2,13 @@ import dns from 'dns';
 import mongoose from 'mongoose';
 
 const MONGODB_URI = process.env.MONGODB_URI || '';
+const isLocalDev = process.env.DEV_ALLOW_LOCAL === 'true';
 
-// Only throw if we're not in DEV_ALLOW_LOCAL mode
-if (!MONGODB_URI && process.env.DEV_ALLOW_LOCAL !== 'true') {
-  // In dev, log a warning but don't throw - DB errors will occur at runtime instead
-  if (process.env.NODE_ENV !== 'production') {
-    console.warn('[mongodb.ts] MONGODB_URI not set. Running in local dev mode will fail DB operations.');
+if (!MONGODB_URI) {
+  if (process.env.NODE_ENV !== 'production' || isLocalDev) {
+    console.warn('[mongodb.ts] MONGODB_URI not set. DB connection will fail if attempted.');
   } else {
-    throw new Error('Please define the MONGODB_URI environment variable inside .env.local');
+    console.warn('[mongodb.ts] Production build or deploy has no MONGODB_URI. Ensure Vercel environment variables are configured.');
   }
 }
 

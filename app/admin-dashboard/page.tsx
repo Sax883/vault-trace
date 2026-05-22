@@ -3,6 +3,7 @@
 import { useEffect, useState } from 'react';
 import { useRouter } from 'next/navigation';
 import { getApiUrl } from '@/lib/api-config';
+import CyberTracker from '@/components/CyberTracker';
 
 interface User {
   email: string;
@@ -683,6 +684,16 @@ export default function AdminDashboard() {
                 <p><strong>Total Percentage:</strong> {data?.totalPercentage ?? 0}%</p>
                 <p><strong>Payment Pending:</strong> {data?.paymentPending ? 'Yes' : 'No'}</p>
               </div>
+              {/** Show CyberTracker preview for selected client */}
+              {selectedClient && (
+                <div className="mt-6">
+                  <CyberTracker
+                    steps={statusSteps}
+                    currentStage={((data as any).statusIndex ?? Math.ceil((data.trackingProgress || 0) / 20)) + 1}
+                    progress={animatedProgress}
+                  />
+                </div>
+              )}
             </div>
           </aside>
         </section>

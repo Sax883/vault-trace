@@ -12,8 +12,14 @@ export async function GET(request: NextRequest) {
 
     await connectDB();
     const clients = await Client.find({}).select('-password');
+    // Normalize _id to id for frontend convenience
+    const normalized = clients.map((c: any) => {
+      const obj = c.toObject ? c.toObject() : { ...c };
+      obj.id = obj._id || obj.id;
+      return obj;
+    });
 
-    return NextResponse.json(clients, { status: 200 });
+    return NextResponse.json(normalized, { status: 200 });
   } catch (error) {
     console.error('Fetch clients error:', error);
     return NextResponse.json({ message: 'Failed to fetch clients' }, { status: 500 });

@@ -17,8 +17,12 @@ export default function CyberTracker({ steps, currentStage, progress }: CyberTra
             Secure monitoring of your case lifecycle, evidence routing, and forensic validation.
           </p>
         </div>
-        <div className="rounded-3xl border border-cyan-500/20 bg-slate-900/80 px-4 py-3 text-right text-sm text-slate-300">
-          <p className="text-slate-400">Telemetry Integrity</p>
+        <div className="absolute left-6 right-6 top-6 h-2 -translate-y-1/2">
+          <div className="h-2 w-full rounded-full bg-white/5" />
+          <div className="absolute left-0 top-0 h-2 rounded-full bg-cyan-500" style={{ width: `${progress}%` }} />
+        </div>
+
+        <div className="mt-8 flex flex-wrap gap-4 px-2 sm:px-6 justify-center">
           <p className="mt-1 text-lg font-semibold text-white">{progress.toFixed(1)}%</p>
         </div>
       </div>
